@@ -16,9 +16,6 @@ CACHE_PATH = os.path.join(os.path.dirname(__file__), "..", "data", "enriched_cac
 JINA_API_KEY = os.getenv("JINA_API_KEY", "")
 JINA_RERANK_URL = "https://api.jina.ai/v1/rerank"
 JINA_RERANK_MODEL = "jina-reranker-v2-base-multilingual"
-JINA_EMBEDDINGS_URL = "https://api.jina.ai/v1/embeddings"         # не используется (локальная модель)
-JINA_EMBEDDINGS_MODEL = "jina-embeddings-v3"                      # не используется (локальная модель)
-JINA_EMBEDDINGS_BATCH_SIZE = 128                                  # не используется (локальная модель)
 
 # --- Локальная модель эмбеддингов (sentence-transformers) ---
 EMBEDDINGS_MODEL_NAME = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
@@ -115,3 +112,11 @@ NEGATIVE_MAX_DISTANCE_KM = 20.0    # дальше = не влияет
 BM25_TOP_K_MULTIPLIER = 3          # берём top_n * 3 для BM25
 JINA_TOP_K_MULTIPLIER = 3          # берём top_n * 3 для Jina
 DEFAULT_TOP_N = 20                  # финальный топ
+
+# --- Комбинированный скор (combined_score) ---
+# combined_score = ALPHA * total_score_norm + BETA * bm25_score_norm
+# Применяется ПЕРЕД Jina Reranker (этап 7)
+# Jina затем семантически переранжирует топ по combined_score
+# ALPHA + BETA должны давать 1.0
+ALPHA = 0.6   # вес качества участка
+BETA  = 0.4   # вес релевантности текстовому запросу

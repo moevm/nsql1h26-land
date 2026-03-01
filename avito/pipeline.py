@@ -3,13 +3,13 @@
 
 Этапы:
   1. Загрузка и нормализация данных из JSON
-  2. Извлечение текстовых фич (regex)
+  2. Извлечение текстовых фич (sentence-transformers, локально)
   3. Расчёт географических расстояний (geopy)
-  4. Числовой скоринг (pandas/numpy)
+  4. Числовой скоринг (pandas/numpy) → total_score
   5. Фильтрация по жёстким критериям
   6. BM25 pre-ranking (по текстовому запросу)
-  7. Jina Reranker (семантический реранкинг)
-  8. Вывод результатов
+  7. Комбинированный скор: combined = α·quality + β·bm25_relevance
+  8. Jina Reranker (семантический реранкинг по combined-топу)
 
 Использование:
   python pipeline.py
@@ -38,6 +38,8 @@ from config import (
     BM25_TOP_K_MULTIPLIER,
     JINA_TOP_K_MULTIPLIER,
     DEFAULT_TOP_N,
+    ALPHA,
+    BETA,
 )
 
 
@@ -131,19 +133,20 @@ def print_results(results: list[dict], show_details: bool = False):
                 f"{r.get('price', 0):,.0f} ₽",
                 f"{r.get('area_sotki', '?')}",
                 f"{r.get('price_per_sotka', 0):,.0f}" if r.get("price_per_sotka") else "?",
+                f"{r.get('combined_score', r.get('total_score', 0)):.4f}",
                 f"{r.get('total_score', 0):.4f}",
                 f"{r.get('bm25_score', 0):.2f}" if r.get("bm25_score") else "-",
                 f"{r.get('jina_score', 0):.4f}" if r.get("jina_score") is not None else "-",
             ]
             table.append(row)
 
-        headers = ["#", "ID", "Название", "Район", "Цена", "Сотки", "₽/сотка", "Score", "BM25", "Jina"]
+        headers = ["#", "ID", "Название", "Район", "Цена", "Сотки", "₽/сотка", "Combined", "Quality", "BM25", "Jina"]
         print(tabulate(table, headers=headers, tablefmt="simple_outline"))
     else:
         for i, r in enumerate(results, 1):
             print(f"  {i:>2}. {r.get('title', '')[:50]}")
             print(f"      Район: {r.get('location', '')} | Цена: {r.get('price', 0):,.0f} ₽ | Сотки: {r.get('area_sotki', '?')}")
-            print(f"      Score: {r.get('total_score', 0):.4f} | BM25: {r.get('bm25_score', '-')} | Jina: {r.get('jina_score', '-')}")
+            print(f"      Final: {r.get('combined_score', r.get('total_score', 0)):.4f} | Quality: {r.get('total_score', 0):.4f} | BM25: {r.get('bm25_score', '-')} | Jina: {r.get('jina_score', '-')}")
             print()
 
     if show_details and results:
@@ -271,24 +274,54 @@ def run_pipeline(
         else:
             bm25_results = filtered[:bm25_top_k]
     if query:
-        print(f"[6/7] BM25 pre-ranking ({len(bm25_results)} кандидатов)... ✓ {t.elapsed:.2f}s")
+        print(f"[6/8] BM25 pre-ranking ({len(bm25_results)} кандидатов)... ✓ {t.elapsed:.2f}s")
     else:
-        print(f"[6/7] BM25 пропущен (нет запроса), top-{bm25_top_k} по score... ✓ {t.elapsed:.2f}s")
+        print(f"[6/8] BM25 пропущен (нет запроса), top-{bm25_top_k} по score... ✓ {t.elapsed:.2f}s")
     timings.append(("BM25", t.elapsed))
 
-    # --- Этап 7: Jina Reranker ---
+    # --- Этап 7: Комбинированный скор (качество + BM25) ---
+    with _stage_timer("combine") as t:
+        if query:
+            # Min-max нормализация total_score по выборке BM25
+            ts_vals = [r.get("total_score", 0) for r in bm25_results]
+            ts_min, ts_max = min(ts_vals), max(ts_vals)
+            ts_range = ts_max - ts_min if ts_max - ts_min > 1e-9 else 1.0
+
+            bm_vals = [r.get("bm25_score", 0) or 0 for r in bm25_results]
+            bm_min, bm_max = min(bm_vals), max(bm_vals)
+            bm_range = bm_max - bm_min if bm_max - bm_min > 1e-9 else 1.0
+
+            for r in bm25_results:
+                ts_norm = (r.get("total_score", 0) - ts_min) / ts_range
+                bm_norm = ((r.get("bm25_score", 0) or 0) - bm_min) / bm_range
+                r["combined_score"] = round(ALPHA * ts_norm + BETA * bm_norm, 4)
+
+            bm25_results.sort(key=lambda x: x.get("combined_score", 0), reverse=True)
+            cs_vals = [r["combined_score"] for r in bm25_results]
+            print(f"[7/8] Комбинированный скор (α={ALPHA}, β={BETA})... ✓ {t.elapsed:.2f}s")
+            print(f"       Combined: min={min(cs_vals):.4f}, max={max(cs_vals):.4f}, "
+                  f"mean={sum(cs_vals)/len(cs_vals):.4f}")
+        else:
+            # Без запроса: combined_score = total_score
+            for r in bm25_results:
+                r["combined_score"] = r.get("total_score", 0)
+            print(f"[7/8] Combined = total_score (нет запроса)... ✓ {t.elapsed:.2f}s")
+    timings.append(("Комбинированный", t.elapsed))
+
+    # --- Этап 8: Jina Reranker (семантический реранкинг по combined-топу) ---
     jina_input_k = top_n * JINA_TOP_K_MULTIPLIER
+    combined_top = bm25_results[:jina_input_k]
     with _stage_timer("jina") as t:
         if not skip_jina and query:
-            final = jina_rerank(query, bm25_results[:jina_input_k], top_n=top_n)
+            final = jina_rerank(query, combined_top, top_n=top_n)
         else:
-            final = bm25_results[:top_n]
+            final = combined_top[:top_n]
     if not skip_jina and query:
-        print(f"[7/7] Jina Reranker ({len(final)} результатов)... ✓ {t.elapsed:.2f}s")
+        print(f"[8/8] Jina Reranker ({len(final)} результатов)... ✓ {t.elapsed:.2f}s")
     elif skip_jina:
-        print(f"[7/7] Jina пропущен (--skip-jina)... ✓ {t.elapsed:.2f}s")
+        print(f"[8/8] Jina пропущен (--skip-jina), финал по combined... ✓ {t.elapsed:.2f}s")
     else:
-        print(f"[7/7] Jina пропущен (нет запроса)... ✓ {t.elapsed:.2f}s")
+        print(f"[8/8] Jina пропущен (нет запроса)... ✓ {t.elapsed:.2f}s")
     timings.append(("Jina Reranker", t.elapsed))
 
     # --- Итоги по времени ---

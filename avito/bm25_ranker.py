@@ -27,7 +27,7 @@ def bm25_prerank(
 
     corpus = [
         tokenize_ru(
-            f"{c.get('title', '')} {c.get('description', '')} {c.get('features_text', '')}"
+            f"{c.get('title', '')} {c.get('description', '')}"
         )
         for c in candidates
     ]
