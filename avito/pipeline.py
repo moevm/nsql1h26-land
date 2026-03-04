@@ -23,7 +23,6 @@ import sys
 import os
 import time
 
-# Добавляем текущую директорию в path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from data_loader import load_and_normalize
@@ -62,8 +61,13 @@ def _load_cache(cache_path: str) -> list[dict] | None:
         try:
             with open(cache_path, "r", encoding="utf-8") as f:
                 data = json.load(f)
-            # Проверяем что кэш валиден (есть ключевые поля)
-            if data and "infra_score" in data[0] and "feature_score" in data[0]:
+            # Проверяем новый формат: вложенный dict features + embedding
+            if (data
+                    and isinstance(data[0].get("features"), dict)
+                    and isinstance(data[0].get("embedding"), list)
+                    and len(data[0]["embedding"]) > 0
+                    and "infra_score" in data[0]
+                    and "feature_score" in data[0]):
                 return data
         except (json.JSONDecodeError, KeyError, IndexError):
             pass
@@ -186,7 +190,6 @@ def run_pipeline(
     t0 = time.time()
     timings: list[tuple[str, float]] = []
 
-    # --- Попытка загрузки из кэша ---
     cached = None if no_cache else _load_cache(cache_path)
 
     if cached is not None:
@@ -195,7 +198,6 @@ def run_pipeline(
         print(f"[1/7] Загрузка из кэша ({len(records)} записей)... ✓ {t.elapsed:.2f}s")
         timings.append(("Загрузка (кэш)", t.elapsed))
 
-        # Пересчитываем total_score (веса могли измениться)
         with _stage_timer("scoring") as t:
             records = compute_total_scores(records)
             scores = [r["total_score"] for r in records]
@@ -205,16 +207,13 @@ def run_pipeline(
         timings.append(("Скоринг", t.elapsed))
 
     else:
-        # --- Этап 1: Загрузка ---
         with _stage_timer("load") as t:
             records = load_and_normalize(data_path)
         print(f"[1/7] Загрузка данных ({len(records)} записей)... ✓ {t.elapsed:.2f}s")
         timings.append(("Загрузка", t.elapsed))
 
-        # --- Этап 2: Фичи (Jina Embeddings) ---
         with _stage_timer("features") as t:
             records = enrich_with_features(records)
-        # Средняя вероятность по каждой фиче
         from config import FEATURE_DEFINITIONS, FEATURE_THRESHOLD
         feat_names = list(FEATURE_DEFINITIONS.keys())
         feat_avg = {}
@@ -228,13 +227,11 @@ def run_pipeline(
         print(f"       Топ фичи (>={FEATURE_THRESHOLD:.0%}): {', '.join(f'{k}={v}' for k, v in top_feats)}")
         timings.append(("Фичи (Embeddings)", t.elapsed))
 
-        # --- Этап 3: Гео-расстояния ---
         with _stage_timer("geo") as t:
             records = enrich_with_geo(records)
         print(f"[3/7] Расчёт расстояний (geopy)... ✓ {t.elapsed:.2f}s")
         timings.append(("Гео-расстояния", t.elapsed))
 
-        # --- Этап 4: Числовой скоринг ---
         with _stage_timer("scoring") as t:
             records = compute_total_scores(records)
             scores = [r["total_score"] for r in records]
@@ -243,10 +240,8 @@ def run_pipeline(
               f"mean={sum(scores)/len(scores):.4f}")
         timings.append(("Скоринг", t.elapsed))
 
-        # --- Сохраняем кэш ---
         _save_cache(records, cache_path)
 
-    # --- Этап 5: Жёсткие фильтры ---
     with _stage_timer("filter") as t:
         filtered = filter_records(
             records,
@@ -263,10 +258,8 @@ def run_pipeline(
         print("\n  Нет записей после фильтрации.")
         return []
 
-    # Сортируем по total_score
     filtered.sort(key=lambda x: x.get("total_score", 0), reverse=True)
 
-    # --- Этап 6: BM25 ---
     bm25_top_k = top_n * BM25_TOP_K_MULTIPLIER
     with _stage_timer("bm25") as t:
         if query:
@@ -279,10 +272,8 @@ def run_pipeline(
         print(f"[6/8] BM25 пропущен (нет запроса), top-{bm25_top_k} по score... ✓ {t.elapsed:.2f}s")
     timings.append(("BM25", t.elapsed))
 
-    # --- Этап 7: Комбинированный скор (качество + BM25) ---
     with _stage_timer("combine") as t:
         if query:
-            # Min-max нормализация total_score по выборке BM25
             ts_vals = [r.get("total_score", 0) for r in bm25_results]
             ts_min, ts_max = min(ts_vals), max(ts_vals)
             ts_range = ts_max - ts_min if ts_max - ts_min > 1e-9 else 1.0
@@ -302,13 +293,11 @@ def run_pipeline(
             print(f"       Combined: min={min(cs_vals):.4f}, max={max(cs_vals):.4f}, "
                   f"mean={sum(cs_vals)/len(cs_vals):.4f}")
         else:
-            # Без запроса: combined_score = total_score
             for r in bm25_results:
                 r["combined_score"] = r.get("total_score", 0)
             print(f"[7/8] Combined = total_score (нет запроса)... ✓ {t.elapsed:.2f}s")
     timings.append(("Комбинированный", t.elapsed))
 
-    # --- Этап 8: Jina Reranker (семантический реранкинг по combined-топу) ---
     jina_input_k = top_n * JINA_TOP_K_MULTIPLIER
     combined_top = bm25_results[:jina_input_k]
     with _stage_timer("jina") as t:
@@ -324,7 +313,6 @@ def run_pipeline(
         print(f"[8/8] Jina пропущен (нет запроса)... ✓ {t.elapsed:.2f}s")
     timings.append(("Jina Reranker", t.elapsed))
 
-    # --- Итоги по времени ---
     elapsed = time.time() - t0
     print(f"\n  {'─'*50}")
     print(f"  ВРЕМЯ ВЫПОЛНЕНИЯ:")
@@ -334,7 +322,6 @@ def run_pipeline(
     print(f"    {'ИТОГО':<20} {elapsed:>6.2f}s")
     print(f"  {'─'*50}")
 
-    # Вывод
     print_results(final, show_details=True)
 
     return final

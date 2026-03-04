@@ -25,18 +25,17 @@ def jina_rerank(
         print("[WARN] Jina API key не задан, пропускаем реранкинг")
         return candidates[:top_n]
 
-    # Собираем документы: описание + текстовые фичи
     documents = []
     for c in candidates:
-        doc_text = c.get("description", "")
+        doc_text = c.get("description", "").lower()
         features_text = c.get("features_text", "")
         if features_text:
             doc_text += f"\nХарактеристики: {features_text}"
-        documents.append(doc_text[:4000])  # Jina лимит
+        documents.append(doc_text[:4000])
 
     payload = {
         "model": JINA_RERANK_MODEL,
-        "query": query,
+        "query": query.lower(),
         "documents": documents,
         "top_n": min(top_n, len(documents)),
     }
@@ -53,12 +52,10 @@ def jina_rerank(
         data = resp.json()
     except requests.exceptions.RequestException as e:
         print(f"[ERROR] Jina Reranker: {e}")
-        # Fallback: возвращаем без реранкинга
         for c in candidates:
             c["jina_score"] = None
         return candidates[:top_n]
 
-    # Маппим результаты обратно
     results = data.get("results", [])
     reranked = []
     for item in results:

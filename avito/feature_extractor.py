@@ -14,7 +14,6 @@ from config import (
     FEATURE_THRESHOLD,
 )
 
-# Глобальная модель (ленивая загрузка)
 _model: SentenceTransformer | None = None
 
 
@@ -27,7 +26,6 @@ def _get_model() -> SentenceTransformer:
     return _model
 
 
-# Человекочитаемые лейблы для вывода
 FEATURE_LABELS = {
     "has_gas": "газ",
     "has_electricity": "электричество",
@@ -57,42 +55,37 @@ def enrich_with_features(records: list[dict]) -> list[dict]:
     """
     model = _get_model()
 
-    # --- Кодируем описания фич ---
     feature_names = list(FEATURE_DEFINITIONS.keys())
     feature_texts = [FEATURE_DEFINITIONS[k][0] for k in feature_names]
 
     print(f"       Кодирование {len(feature_texts)} фич...")
     feature_embs = model.encode(feature_texts, normalize_embeddings=True, show_progress_bar=False)
 
-    # --- Собираем тексты описаний ---
     descriptions = []
     for rec in records:
-        text = f"{rec.get('title', '')} {rec.get('description', '')} {rec.get('geo_ref', '')}"
+        text = f"{rec.get('title', '')} {rec.get('description', '')} {rec.get('geo_ref', '')}".lower()
         descriptions.append(text[:1500])
 
     print(f"       Кодирование {len(descriptions)} описаний (локальная модель)...")
     desc_embs = model.encode(descriptions, normalize_embeddings=True,
                              show_progress_bar=True, batch_size=128)
 
-    # --- Cosine similarity матрица: (n_records, n_features) ---
-    # Векторы уже нормализованы → dot product = cosine similarity
-    sim_matrix = desc_embs @ feature_embs.T  # shape: (n_records, n_features)
+    sim_matrix = desc_embs @ feature_embs.T
 
-    # --- Заполняем записи ---
     weights_arr = np.array([FEATURE_WEIGHTS[fn] for fn in feature_names])
 
     for i, rec in enumerate(records):
-        sims = sim_matrix[i]  # (n_features,)
+        sims = sim_matrix[i]
         probs = np.clip(sims, 0.0, 1.0)
 
-        # Запись вероятностей по каждой фиче
+        # Вложенный словарь фич (формат, ожидаемый бэкендом)
+        features_dict = {}
         for j, feat_name in enumerate(feature_names):
-            rec[feat_name] = round(float(probs[j]), 4)
+            features_dict[feat_name] = round(float(probs[j]), 4)
+        rec["features"] = features_dict
 
-        # Взвешенный score
         rec["feature_score"] = round(float(np.dot(probs, weights_arr)), 4)
 
-        # Текстовые фичи выше порога
         found = [(feature_names[j], float(probs[j]))
                  for j in range(len(feature_names))
                  if probs[j] >= FEATURE_THRESHOLD]
@@ -102,5 +95,8 @@ def enrich_with_features(records: list[dict]) -> list[dict]:
             f"{FEATURE_LABELS.get(f, f)} ({p:.0%})"
             for f, p in found
         )
+
+        # Сохраняем embedding для HNSW-индекса
+        rec["embedding"] = desc_embs[i].tolist()
 
     return records

@@ -30,20 +30,15 @@ def compute_total_scores(records: list[dict]) -> list[dict]:
     """
     df = pd.DataFrame(records)
 
-    # Нормализуем infra и negative scores по выборке
     df["infra_norm"] = normalize_series(df["infra_score"])
     df["negative_norm"] = normalize_series(df["negative_score"])
 
-    # Feature score: нормализуем
     df["feature_norm"] = normalize_series(df["feature_score"])
 
-    # Price score: ниже цена за сотку → лучше
-    # Заполняем пропуски медианой
     price_col = df["price_per_sotka"].fillna(df["price_per_sotka"].median())
     price_col = price_col.replace(0, df["price_per_sotka"].median())
     df["price_norm"] = 1.0 - normalize_series(price_col)
 
-    # Взвешенная сумма
     df["total_score"] = (
         WEIGHTS["infra"]    * df["infra_norm"] +
         WEIGHTS["negative"] * df["negative_norm"] +
@@ -52,7 +47,6 @@ def compute_total_scores(records: list[dict]) -> list[dict]:
     )
     df["total_score"] = df["total_score"].round(4)
 
-    # Записываем обратно
     for i, rec in enumerate(records):
         rec["infra_norm"] = round(float(df.loc[i, "infra_norm"]), 4)
         rec["negative_norm"] = round(float(df.loc[i, "negative_norm"]), 4)

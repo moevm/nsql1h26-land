@@ -22,7 +22,6 @@ def bm25_prerank(
     Возвращает top_k записей с добавленным полем bm25_score.
     """
     if not query or not query.strip():
-        # Без текстового запроса — пропускаем BM25, сортируем по total_score
         return sorted(candidates, key=lambda x: x.get("total_score", 0), reverse=True)[:top_k]
 
     corpus = [

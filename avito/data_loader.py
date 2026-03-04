@@ -18,7 +18,6 @@ def parse_area_from_title(title: str) -> Optional[float]:
     m = re.search(r"(\d+[.,]?\d*)\s*сот", title, re.IGNORECASE)
     if m:
         return float(m.group(1).replace(",", "."))
-    # Гектары
     m = re.search(r"(\d+[.,]?\d*)\s*га", title, re.IGNORECASE)
     if m:
         return float(m.group(1).replace(",", ".")) * 100
@@ -54,7 +53,6 @@ def normalize_records(raw_data: list[dict]) -> list[dict]:
 
         area = parse_area_from_title(title)
         if area is None:
-            # Попробуем из описания
             m = re.search(r"(\d+[.,]?\d*)\s*сот", description, re.IGNORECASE)
             if m:
                 area = float(m.group(1).replace(",", "."))

@@ -1,0 +1,137 @@
+"""
+Гео-сервис: расчёт расстояний до инфраструктуры через MongoDB $geoNear.
+
+Использует 2dsphere индексы на коллекциях инфраструктуры.
+"""
+
+import logging
+from motor.motor_asyncio import AsyncIOMotorDatabase
+from config import (
+    COL_METRO, COL_HOSPITALS, COL_SCHOOLS,
+    COL_KINDERGARTENS, COL_STORES, COL_PICKUP_POINTS,
+    COL_BUS_STOPS, COL_NEGATIVE,
+    INFRA_MAX_DISTANCE_KM,
+    NEGATIVE_MIN_DISTANCE_KM, NEGATIVE_MAX_DISTANCE_KM,
+    WEIGHTS,
+)
+
+logger = logging.getLogger(__name__)
+
+# Коллекция → ключ в distances
+_INFRA_MAP = {
+    COL_METRO:         "nearest_metro",
+    COL_HOSPITALS:     "nearest_hospital",
+    COL_SCHOOLS:       "nearest_school",
+    COL_KINDERGARTENS: "nearest_kindergarten",
+    COL_STORES:        "nearest_store",
+    COL_PICKUP_POINTS: "nearest_pickup_point",
+    COL_BUS_STOPS:     "nearest_bus_stop",
+}
+
+# Веса для расчёта infra_score
+_INFRA_WEIGHTS = {
+    "nearest_metro":         0.25,
+    "nearest_hospital":      0.15,
+    "nearest_school":        0.15,
+    "nearest_kindergarten":  0.10,
+    "nearest_store":         0.15,
+    "nearest_pickup_point":  0.10,
+    "nearest_bus_stop":      0.10,
+}
+
+
+async def _nearest(db: AsyncIOMotorDatabase, collection: str, lon: float, lat: float) -> dict:
+    """Находит ближайший объект в коллекции через $geoNear."""
+    pipeline = [
+        {
+            "$geoNear": {
+                "near": {"type": "Point", "coordinates": [lon, lat]},
+                "distanceField": "dist_meters",
+                "spherical": True,
+            }
+        },
+        {"$limit": 1},
+        {"$project": {"name": 1, "dist_meters": 1, "type": 1}},
+    ]
+    cursor = db[collection].aggregate(pipeline)
+    result = await cursor.to_list(length=1)
+    if result:
+        doc = result[0]
+        return {
+            "name": doc.get("name", ""),
+            "km": round(doc["dist_meters"] / 1000.0, 2),
+        }
+    return {"name": "", "km": INFRA_MAX_DISTANCE_KM}
+
+
+async def compute_distances(db: AsyncIOMotorDatabase, lat: float, lon: float) -> dict:
+    """
+    Рассчитывает расстояния до ближайших объектов всех типов.
+
+    Возвращает:
+        {
+            "distances": {
+                "nearest_metro": {"name": "...", "km": 5.2},
+                ...
+            },
+            "infra_score": 0.42,
+            "negative_score": 0.71,
+        }
+    """
+    distances = {}
+
+    # инфраструктура
+    for col_name, dist_key in _INFRA_MAP.items():
+        distances[dist_key] = await _nearest(db, col_name, lon, lat)
+
+    # негативные объекты
+    distances["nearest_negative"] = await _nearest(db, COL_NEGATIVE, lon, lat)
+
+    # infra_score
+    infra_score = 0.0
+    for dist_key, weight in _INFRA_WEIGHTS.items():
+        km = min(distances.get(dist_key, {}).get("km", INFRA_MAX_DISTANCE_KM), INFRA_MAX_DISTANCE_KM)
+        infra_score += weight * (1.0 / (1.0 + km))
+    infra_score = round(infra_score, 4)
+
+    # negative_score (больше = лучше = дальше от негатива)
+    neg_km = distances.get("nearest_negative", {}).get("km", NEGATIVE_MAX_DISTANCE_KM)
+    neg_km = max(neg_km, NEGATIVE_MIN_DISTANCE_KM)
+    neg_km = min(neg_km, NEGATIVE_MAX_DISTANCE_KM)
+    negative_score = round(
+        (neg_km - NEGATIVE_MIN_DISTANCE_KM) / (NEGATIVE_MAX_DISTANCE_KM - NEGATIVE_MIN_DISTANCE_KM),
+        4,
+    )
+
+    return {
+        "distances": distances,
+        "infra_score": infra_score,
+        "negative_score": negative_score,
+    }
+
+
+def compute_total_score(
+    infra_score: float,
+    negative_score: float,
+    feature_score: float,
+    price_per_sotka: float | None,
+    all_prices: list[float] | None = None,
+) -> float:
+    """
+    Рассчитывает total_score для одного объявления.
+    Если all_prices не передан — price_norm считается как 0.5.
+    """
+    price_norm = 0.5
+    if price_per_sotka and all_prices and len(all_prices) > 1:
+        mn = min(all_prices)
+        mx = max(all_prices)
+        if mx - mn > 1e-9:
+            price_norm = 1.0 - (price_per_sotka - mn) / (mx - mn)
+
+    total = (
+        WEIGHTS["infra"] * infra_score +
+        WEIGHTS["negative"] * negative_score +
+        WEIGHTS["features"] * feature_score +
+        WEIGHTS["price"] * price_norm
+    )
+    return round(total, 4)

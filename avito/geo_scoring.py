@@ -63,7 +63,6 @@ def compute_infra_score(record: dict) -> float:
     hosp = min(record.get("nearest_hospital_km", INFRA_MAX_DISTANCE_KM), INFRA_MAX_DISTANCE_KM)
     school = min(record.get("nearest_school_km", INFRA_MAX_DISTANCE_KM), INFRA_MAX_DISTANCE_KM)
 
-    # Веса: метро важнее
     w_metro, w_hosp, w_school = 0.5, 0.25, 0.25
 
     score = (
@@ -82,7 +81,6 @@ def compute_negative_score(record: dict) -> float:
     neg_km = max(neg_km, NEGATIVE_MIN_DISTANCE_KM)
     neg_km = min(neg_km, NEGATIVE_MAX_DISTANCE_KM)
 
-    # Линейная нормализация: 0.5km → 0.0, 20km → 1.0
     score = (neg_km - NEGATIVE_MIN_DISTANCE_KM) / (NEGATIVE_MAX_DISTANCE_KM - NEGATIVE_MIN_DISTANCE_KM)
     return round(score, 4)
 
