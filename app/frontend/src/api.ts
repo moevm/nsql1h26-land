@@ -63,6 +63,7 @@ export interface SearchResponse {
   page: number;
   page_size: number;
   pages: number;
+  can_expand: boolean;
 }
 
 export interface PlotFilters {
@@ -154,8 +155,17 @@ export interface MapPlot {
   features_text?: string;
 }
 
-export async function fetchPlotsForMap(): Promise<{ items: MapPlot[]; total: number }> {
-  const res = await fetch(`${API_BASE}/plots/map`);
+export interface MapResponse {
+  items: MapPlot[];
+  total: number;
+  page: number;
+  page_size: number;
+  pages: number;
+}
+
+export async function fetchPlotsForMap(page = 1, pageSize = 200): Promise<MapResponse> {
+  const params = new URLSearchParams({ page: String(page), page_size: String(pageSize) });
+  const res = await fetch(`${API_BASE}/plots/map?${params}`);
   if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
   return res.json();
 }

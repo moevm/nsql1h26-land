@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { MapContainer, TileLayer, CircleMarker, Popup, useMap } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
@@ -39,13 +39,39 @@ export default function PlotsMap() {
   const [plots, setPlots] = useState<MapPlot[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [loadedPages, setLoadedPages] = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalPlots, setTotalPlots] = useState(0);
+
+  const loadPage = useCallback(async (page: number) => {
+    try {
+      const r = await fetchPlotsForMap(page, 200);
+      setPlots((prev) => [...prev, ...r.items]);
+      setTotalPages(r.pages);
+      setTotalPlots(r.total);
+      setLoadedPages(page);
+      return r.pages;
+    } catch (e: any) {
+      setError(e.message);
+      return 0;
+    }
+  }, []);
 
   useEffect(() => {
-    fetchPlotsForMap()
-      .then((r) => setPlots(r.items))
-      .catch((e) => setError(e.message))
-      .finally(() => setLoading(false));
-  }, []);
+    let cancelled = false;
+    (async () => {
+      setLoading(true);
+      const pages = await loadPage(1);
+      if (cancelled || !pages) { setLoading(false); return; }
+      // Auto-load remaining pages
+      for (let p = 2; p <= pages; p++) {
+        if (cancelled) break;
+        await loadPage(p);
+      }
+      setLoading(false);
+    })();
+    return () => { cancelled = true; };
+  }, [loadPage]);
 
   const stats = useMemo(() => {
     if (plots.length === 0) return null;
@@ -81,7 +107,12 @@ export default function PlotsMap() {
                 fontFamily: 'var(--font-mono)',
               }}
             >
-              {stats.count} участков
+              {plots.length}{loading ? ` / ${totalPlots}` : ''} участков
+              {loading && loadedPages > 0 && (
+                <span style={{ color: 'var(--c-text-dim)', marginLeft: '4px' }}>
+                  (стр. {loadedPages}/{totalPages})
+                </span>
+              )}
             </div>
             <div
               className="px-3 py-1.5 rounded-lg text-xs"

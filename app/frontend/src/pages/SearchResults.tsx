@@ -65,6 +65,7 @@ export default function SearchResults() {
   const results = data?.items ?? [];
   const total = data?.total ?? 0;
   const pages = data?.pages ?? 0;
+  const canExpand = data?.can_expand ?? false;
 
   return (
     <div className="animate-fade-in">
@@ -223,6 +224,19 @@ export default function SearchResults() {
             className="btn-ghost text-sm disabled:opacity-30"
           >
             <ChevronRight size={16} />
+          </button>
+        </div>
+      )}
+
+      {/* Expand hint: shown on last page when more candidates are available */}
+      {canExpand && currentPage === pages && pages > 0 && !loading && (
+        <div className="text-center mt-4">
+          <button
+            onClick={() => changePage(currentPage + 1)}
+            className="btn-ghost text-xs"
+            style={{ color: 'var(--c-accent)' }}
+          >
+            Загрузить ещё результаты (Jina rerank) →
           </button>
         </div>
       )}

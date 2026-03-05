@@ -36,7 +36,7 @@ JINA_API_KEY = os.getenv("JINA_API_KEY", "")
 JINA_RERANK_URL = "https://api.jina.ai/v1/rerank"
 JINA_RERANK_MODEL = "jina-reranker-v2-base-multilingual"
 
-# --- Feature definitions (из avito/config.py) ---
+# --- Feature definitions ---
 FEATURE_THRESHOLD = 0.30
 FEATURE_DEFINITIONS = {
     "has_gas":            ("к участку подведён газ, газоснабжение, газификация", 0.25),
@@ -89,8 +89,11 @@ NEGATIVE_MIN_DISTANCE_KM = 0.5
 NEGATIVE_MAX_DISTANCE_KM = 20.0
 
 # --- Search ---
-SEARCH_VECTOR_TOP_K = 100
+SEARCH_VECTOR_TOP_K = 100        # начальное кол-во кандидатов из vector search
+SEARCH_VECTOR_EXPAND_STEP = 100  # шаг расширения при выходе за кэш
+SEARCH_VECTOR_MAX_K = 500        # максимальный top_k для vector search
 SEARCH_JINA_TOP_N = 20
+JINA_SCORE_THRESHOLD = 0.1        # порог Jina score — ниже отсекаем
 ALPHA = 0.6
 BETA = 0.4
 

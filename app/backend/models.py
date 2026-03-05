@@ -105,6 +105,7 @@ class SearchResultOut(BaseModel):
     page: int
     page_size: int
     pages: int
+    can_expand: bool = False  # есть ещё кандидаты за пределами кэша
 
 
 # ---------- Infrastructure ----------

@@ -1,9 +1,0 @@
-**/__pycache__
-**/*.pyc
-**/*.pyo
-data/enriched_cache.json
-data/test_gas.json
-avito/test_gas.py
-.venv
-**/.git
-**/*.md

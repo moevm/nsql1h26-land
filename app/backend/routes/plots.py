@@ -121,21 +121,31 @@ async def list_plots(
 
 
 @router.get("/map")
-async def get_plots_for_map():
-    """Лёгкий эндпоинт для карты: возвращает все участки с минимальными полями."""
+async def get_plots_for_map(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(200, ge=1, le=1000),
+):
+    """Эндпоинт для карты: возвращает участки постранично с минимальными полями."""
     db = get_db()
     projection = {
         "title": 1, "price": 1, "area_sotki": 1,
         "lat": 1, "lon": 1, "total_score": 1,
         "location": 1, "features_text": 1,
     }
-    cursor = db[COL_PLOTS].find({}, projection)
-    docs = await cursor.to_list(length=10000)
+    total = await db[COL_PLOTS].count_documents({})
+    pages = max(1, math.ceil(total / page_size))
+    cursor = (
+        db[COL_PLOTS]
+        .find({}, projection)
+        .skip((page - 1) * page_size)
+        .limit(page_size)
+    )
+    docs = await cursor.to_list(length=page_size)
     items = []
     for d in docs:
         d["_id"] = str(d["_id"])
         items.append(d)
-    return {"items": items, "total": len(items)}
+    return {"items": items, "total": total, "page": page, "page_size": page_size, "pages": pages}
 
 
 @router.get("/search", response_model=SearchResultOut)
@@ -156,7 +166,7 @@ async def search(
     """
     import math
     db = get_db()
-    page_items, total = await search_plots(
+    page_items, total, can_expand = await search_plots(
         db, q,
         page=page,
         page_size=page_size,
@@ -175,6 +185,7 @@ async def search(
     return SearchResultOut(
         items=items, total=total, query=q,
         page=page, page_size=page_size, pages=pages,
+        can_expand=can_expand,
     )
 
 

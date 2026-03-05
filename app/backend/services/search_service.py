@@ -23,7 +23,10 @@ from motor.motor_asyncio import AsyncIOMotorDatabase
 from config import (
     COL_PLOTS,
     SEARCH_VECTOR_TOP_K,
+    SEARCH_VECTOR_EXPAND_STEP,
+    SEARCH_VECTOR_MAX_K,
     SEARCH_JINA_TOP_N,
+    JINA_SCORE_THRESHOLD,
     JINA_API_KEY, JINA_RERANK_URL, JINA_RERANK_MODEL,
     ALPHA, BETA,
 )
@@ -205,6 +208,13 @@ def jina_rerank(
     return reranked[:top_n]
 
 
+def _apply_threshold(results: list[dict], threshold: float) -> list[dict]:
+    """Отсекает результаты с jina_score ниже порога."""
+    if threshold <= 0:
+        return results
+    return [r for r in results if r.get("jina_score", 1.0) >= threshold]
+
+
 async def search_plots(
     db: AsyncIOMotorDatabase,
     query: str,
@@ -214,12 +224,10 @@ async def search_plots(
     max_price: float | None = None,
     min_area: float | None = None,
     max_area: float | None = None,
-) -> tuple[list[dict], int]:
+) -> tuple[list[dict], int, bool]:
     """
-    Полный поисковый пайплайн с мемоизацией:
-      1. Проверяем кэш — если уже считали Jina для (query, filters), берём оттуда
-      2. Если кэш пуст или недостаточно результатов — vector search + Jina rerank
-      3. Возвращаем (page_items, total_cached)
+    Полный поисковый пайплайн с мемоизацией.
+    Возвращает (page_items, total_cached, can_expand).
     """
     # Собираем MongoDB-фильтры
     mongo_filters: dict = {}
@@ -245,29 +253,40 @@ async def search_plots(
     if (
         entry is not None
         and (now - entry.timestamp) < CACHE_TTL
-        and (len(entry.results) >= needed or entry.vector_top_k >= needed)
+        and len(entry.results) >= needed
     ):
         total = len(entry.results)
-        return entry.results[offset:offset + page_size], total
+        can_expand = entry.vector_top_k < SEARCH_VECTOR_MAX_K
+        return entry.results[offset:offset + page_size], total, can_expand
 
-    # Нужен (пере)расчёт
-    top_k = max(SEARCH_VECTOR_TOP_K, needed + 50)
+    # Кэш есть, но результатов не хватает → расширяем vector search
+    if (
+        entry is not None
+        and (now - entry.timestamp) < CACHE_TTL
+        and entry.vector_top_k < SEARCH_VECTOR_MAX_K
+    ):
+        new_top_k = min(entry.vector_top_k + SEARCH_VECTOR_EXPAND_STEP, SEARCH_VECTOR_MAX_K)
+        logger.info("Expanding search cache: %d → %d candidates", entry.vector_top_k, new_top_k)
+    else:
+        new_top_k = SEARCH_VECTOR_TOP_K
 
     query_embedding = compute_query_embedding(query)
 
     candidates = await vector_search(
-        db, query_embedding, top_k=top_k,
+        db, query_embedding, top_k=new_top_k,
         filters=mongo_filters if mongo_filters else None,
     )
 
     if not candidates:
-        _search_cache[key] = _CacheEntry(results=[], timestamp=now, vector_top_k=top_k)
-        return [], 0
+        _search_cache[key] = _CacheEntry(results=[], timestamp=now, vector_top_k=new_top_k)
+        return [], 0, False
 
-    # Jina реранкирует ВСЕ кандидаты (до 100–200), не обрезая
+    # Jina реранкирует ВСЕ кандидаты, затем отсекаем по порогу
     reranked = jina_rerank(query, candidates, top_n=len(candidates))
+    reranked = _apply_threshold(reranked, JINA_SCORE_THRESHOLD)
 
-    _search_cache[key] = _CacheEntry(results=reranked, timestamp=now, vector_top_k=top_k)
+    _search_cache[key] = _CacheEntry(results=reranked, timestamp=now, vector_top_k=new_top_k)
 
     total = len(reranked)
-    return reranked[offset:offset + page_size], total
+    can_expand = new_top_k < SEARCH_VECTOR_MAX_K
+    return reranked[offset:offset + page_size], total, can_expand
