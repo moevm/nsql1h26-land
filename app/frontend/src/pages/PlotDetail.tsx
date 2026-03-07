@@ -2,45 +2,21 @@ import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { TrainFront, Hospital, School, Baby, ShoppingCart, Package, Bus, AlertTriangle, ArrowLeft, ExternalLink } from 'lucide-react';
 import { fetchPlot, deletePlot, type Plot } from '../api';
+import { formatPriceFull, getErrorMessage } from '../utils';
+import ScoreGauge from '../components/ScoreGauge';
 
-function formatPrice(p: number) {
-  return p.toLocaleString('ru-RU') + ' ₽';
+function distanceColor(km: number): string {
+  if (km < 5) return 'var(--c-green)';
+  if (km < 15) return 'var(--c-yellow)';
+  return 'var(--c-red)';
 }
 
-function ScoreGauge({ value, label, size = 80, color }: { value: number; label: string; size?: number; color: string }) {
-  const r = (size - 8) / 2;
-  const circumference = 2 * Math.PI * r;
-  const offset = circumference * (1 - value);
-
-  return (
-    <div className="flex flex-col items-center gap-1">
-      <svg width={size} height={size}>
-        <circle cx={size/2} cy={size/2} r={r} fill="none" stroke="var(--c-border)" strokeWidth="4" />
-        <circle
-          cx={size/2} cy={size/2} r={r}
-          fill="none" stroke={color} strokeWidth="4" strokeLinecap="round"
-          strokeDasharray={circumference} strokeDashoffset={offset}
-          transform={`rotate(-90 ${size/2} ${size/2})`}
-          style={{ transition: 'stroke-dashoffset 1.2s cubic-bezier(0.4,0,0.2,1)' }}
-        />
-        <text x={size/2} y={size/2} textAnchor="middle" dominantBaseline="central"
-          style={{ fill: color, fontSize: size * 0.28, fontFamily: 'var(--font-mono)', fontWeight: 700 }}>
-          {(value * 100).toFixed(0)}
-        </text>
-      </svg>
-      <span className="text-xs" style={{ color: 'var(--c-text-muted)', fontFamily: 'var(--font-mono)' }}>{label}</span>
-    </div>
-  );
-}
-
-function DistanceRow({ icon: Icon, label, name, km }: { icon: React.ElementType; label: string; name: string; km: number }) {
-  const color = km < 5 ? 'var(--c-green)' : km < 15 ? 'var(--c-yellow)' : 'var(--c-red)';
+function DistanceRow({ icon: Icon, label, name, km }: { readonly icon: React.ElementType; readonly label: string; readonly name: string; readonly km: number }) {
+  const color = distanceColor(km);
   return (
     <div
-      className="flex items-center justify-between py-3 px-4 rounded-lg transition-colors duration-200"
+      className="flex items-center justify-between py-3 px-4 rounded-lg transition-colors duration-200 row-hover"
       style={{ borderBottom: '1px solid var(--c-border)' }}
-      onMouseEnter={(e) => e.currentTarget.style.background = 'var(--c-surface-hover)'}
-      onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
     >
       <div className="flex items-center gap-3">
         <Icon size={18} style={{ color: 'var(--c-text-muted)', flexShrink: 0 }} />
@@ -69,10 +45,16 @@ export default function PlotDetail() {
 
   useEffect(() => {
     if (!id) return;
-    fetchPlot(id)
+    const controller = new AbortController();
+    fetchPlot(id, controller.signal)
       .then(setPlot)
-      .catch((e) => setError(e.message))
-      .finally(() => setLoading(false));
+      .catch((e) => {
+        if (!controller.signal.aborted) setError(getErrorMessage(e));
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setLoading(false);
+      });
+    return () => controller.abort();
   }, [id]);
 
   async function handleDelete() {
@@ -81,8 +63,8 @@ export default function PlotDetail() {
     try {
       await deletePlot(id);
       navigate('/');
-    } catch (e: any) {
-      setError(e.message);
+    } catch (e) {
+      setError(getErrorMessage(e));
     } finally {
       setDeleting(false);
     }
@@ -146,7 +128,7 @@ export default function PlotDetail() {
                 className="text-2xl font-bold"
                 style={{ color: 'var(--c-accent)', fontFamily: 'var(--font-mono)' }}
               >
-                {formatPrice(plot.price)}
+                {formatPriceFull(plot.price)}
               </span>
               {plot.area_sotki && (
                 <span className="text-sm" style={{ color: 'var(--c-text-muted)' }}>
@@ -162,7 +144,7 @@ export default function PlotDetail() {
                     fontFamily: 'var(--font-mono)',
                   }}
                 >
-                  {formatPrice(plot.price_per_sotka)}/сот.
+                  {formatPriceFull(plot.price_per_sotka)}/сот.
                 </span>
               )}
             </div>
@@ -197,9 +179,9 @@ export default function PlotDetail() {
                 Характеристики
               </h2>
               <div className="flex flex-wrap gap-2">
-                {plot.features_text.split(', ').map((f, i) => (
+                {plot.features_text.split(', ').map((f) => (
                   <span
-                    key={i}
+                    key={f}
                     className="text-xs px-3 py-1.5 rounded-lg"
                     style={{
                       background: 'var(--c-accent-dim)',

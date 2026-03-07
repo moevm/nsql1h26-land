@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { Download, Upload, RefreshCw, X, Layers, TrainFront, Hospital as HospitalIcon, School as SchoolIcon, Baby, Store, Package, BusFront, AlertTriangle } from 'lucide-react';
 import { exportAll, importPlots, getStats, clearCollection } from '../api';
+import { getErrorMessage } from '../utils';
 
 export default function AdminPanel() {
   const [stats, setStats] = useState<Record<string, number> | null>(null);
@@ -13,8 +14,8 @@ export default function AdminPanel() {
     try {
       const s = await getStats();
       setStats(s);
-    } catch (e: any) {
-      setError(e.message);
+    } catch (e) {
+      setError(getErrorMessage(e));
     }
   }
 
@@ -22,10 +23,16 @@ export default function AdminPanel() {
     loadStats();
   }, []);
 
+  // Auto-clear success message after 5s (with proper cleanup)
+  useEffect(() => {
+    if (!message) return;
+    const timer = setTimeout(() => setMessage(''), 5000);
+    return () => clearTimeout(timer);
+  }, [message]);
+
   function showMsg(msg: string) {
     setMessage(msg);
     setError('');
-    setTimeout(() => setMessage(''), 5000);
   }
 
   function showErr(msg: string) {
@@ -45,8 +52,8 @@ export default function AdminPanel() {
       a.click();
       URL.revokeObjectURL(url);
       showMsg('Экспорт завершён');
-    } catch (e: any) {
-      showErr(e.message);
+    } catch (e) {
+      showErr(getErrorMessage(e));
     } finally {
       setLoading(false);
     }
@@ -82,8 +89,8 @@ export default function AdminPanel() {
       const result = await importPlots(records);
       showMsg(`Импортировано: ${result.inserted} объявлений`);
       loadStats();
-    } catch (e: any) {
-      showErr(e.message);
+    } catch (e) {
+      showErr(getErrorMessage(e));
     } finally {
       setLoading(false);
       if (fileInput.current) fileInput.current.value = '';
@@ -96,8 +103,8 @@ export default function AdminPanel() {
       const result = await clearCollection(col);
       showMsg(`Удалено ${result.deleted} документов из "${col}"`);
       loadStats();
-    } catch (e: any) {
-      showErr(e.message);
+    } catch (e) {
+      showErr(getErrorMessage(e));
     }
   }
 
@@ -239,9 +246,7 @@ export default function AdminPanel() {
               return (
                 <div
                   key={col}
-                  className="flex items-center justify-between py-3 px-4 rounded-lg transition-colors duration-200"
-                  onMouseEnter={(e) => e.currentTarget.style.background = 'var(--c-surface-hover)'}
-                  onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                  className="flex items-center justify-between py-3 px-4 rounded-lg transition-colors duration-200 row-hover"
                 >
                   <div className="flex items-center gap-3">
                     <span

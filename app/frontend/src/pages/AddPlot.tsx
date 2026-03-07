@@ -1,9 +1,10 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { MapContainer, TileLayer, Marker, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { createPlot } from '../api';
+import { SPB_CENTER, getErrorMessage } from '../utils';
 
 // Fix default marker icon
 delete (L.Icon.Default.prototype as any)._getIconUrl;
@@ -25,9 +26,7 @@ const goldIcon = new L.Icon({
   className: 'hue-rotate-[30deg] brightness-125',
 });
 
-const SPB_CENTER: [number, number] = [59.93, 30.32];
-
-function MapPicker({ lat, lon, onChange }: { lat: number | null; lon: number | null; onChange: (lat: number, lon: number) => void }) {
+function MapPicker({ lat, lon, onChange }: { readonly lat: number | null; readonly lon: number | null; readonly onChange: (lat: number, lon: number) => void }) {
   function ClickHandler() {
     useMapEvents({
       click(e) {
@@ -109,8 +108,8 @@ export default function AddPlot() {
       };
       const created = await createPlot(data);
       navigate(`/plots/${created._id}`);
-    } catch (e: any) {
-      setError(e.message);
+    } catch (e) {
+      setError(getErrorMessage(e));
     } finally {
       setLoading(false);
     }
@@ -182,17 +181,18 @@ export default function AddPlot() {
           </h2>
 
           <div>
-            <label className="block text-xs mb-1.5 uppercase tracking-wide" style={{ color: 'var(--c-text-muted)', fontFamily: 'var(--font-mono)' }}>
+            <label htmlFor="add-title" className="block text-xs mb-1.5 uppercase tracking-wide" style={{ color: 'var(--c-text-muted)', fontFamily: 'var(--font-mono)' }}>
               Заголовок *
             </label>
-            <input name="title" value={form.title} onChange={onChange} required className="input-field" />
+            <input id="add-title" name="title" value={form.title} onChange={onChange} required className="input-field" />
           </div>
 
           <div>
-            <label className="block text-xs mb-1.5 uppercase tracking-wide" style={{ color: 'var(--c-text-muted)', fontFamily: 'var(--font-mono)' }}>
+            <label htmlFor="add-description" className="block text-xs mb-1.5 uppercase tracking-wide" style={{ color: 'var(--c-text-muted)', fontFamily: 'var(--font-mono)' }}>
               Описание
             </label>
             <textarea
+              id="add-description"
               name="description"
               value={form.description}
               onChange={onChange}
@@ -203,39 +203,40 @@ export default function AddPlot() {
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-xs mb-1.5 uppercase tracking-wide" style={{ color: 'var(--c-text-muted)', fontFamily: 'var(--font-mono)' }}>
+              <label htmlFor="add-price" className="block text-xs mb-1.5 uppercase tracking-wide" style={{ color: 'var(--c-text-muted)', fontFamily: 'var(--font-mono)' }}>
                 Цена (₽)
               </label>
-              <input name="price" type="number" value={form.price} onChange={onChange} className="input-field" />
+              <input id="add-price" name="price" type="number" value={form.price} onChange={onChange} className="input-field" />
             </div>
             <div>
-              <label className="block text-xs mb-1.5 uppercase tracking-wide" style={{ color: 'var(--c-text-muted)', fontFamily: 'var(--font-mono)' }}>
+              <label htmlFor="add-area" className="block text-xs mb-1.5 uppercase tracking-wide" style={{ color: 'var(--c-text-muted)', fontFamily: 'var(--font-mono)' }}>
                 Площадь (сотки)
               </label>
-              <input name="area_sotki" type="number" step="0.1" value={form.area_sotki} onChange={onChange} className="input-field" />
+              <input id="add-area" name="area_sotki" type="number" step="0.1" value={form.area_sotki} onChange={onChange} className="input-field" />
             </div>
           </div>
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-xs mb-1.5 uppercase tracking-wide" style={{ color: 'var(--c-text-muted)', fontFamily: 'var(--font-mono)' }}>
+              <label htmlFor="add-location" className="block text-xs mb-1.5 uppercase tracking-wide" style={{ color: 'var(--c-text-muted)', fontFamily: 'var(--font-mono)' }}>
                 Район
               </label>
-              <input name="location" value={form.location} onChange={onChange} className="input-field" />
+              <input id="add-location" name="location" value={form.location} onChange={onChange} className="input-field" />
             </div>
             <div>
-              <label className="block text-xs mb-1.5 uppercase tracking-wide" style={{ color: 'var(--c-text-muted)', fontFamily: 'var(--font-mono)' }}>
+              <label htmlFor="add-address" className="block text-xs mb-1.5 uppercase tracking-wide" style={{ color: 'var(--c-text-muted)', fontFamily: 'var(--font-mono)' }}>
                 Адрес
               </label>
-              <input name="address" value={form.address} onChange={onChange} className="input-field" />
+              <input id="add-address" name="address" value={form.address} onChange={onChange} className="input-field" />
             </div>
           </div>
 
           <div>
-            <label className="block text-xs mb-1.5 uppercase tracking-wide" style={{ color: 'var(--c-text-muted)', fontFamily: 'var(--font-mono)' }}>
+            <label htmlFor="add-geo-ref" className="block text-xs mb-1.5 uppercase tracking-wide" style={{ color: 'var(--c-text-muted)', fontFamily: 'var(--font-mono)' }}>
               Гео-описание
             </label>
             <input
+              id="add-geo-ref"
               name="geo_ref"
               value={form.geo_ref}
               onChange={onChange}
@@ -246,16 +247,16 @@ export default function AddPlot() {
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-xs mb-1.5 uppercase tracking-wide" style={{ color: 'var(--c-text-muted)', fontFamily: 'var(--font-mono)' }}>
+              <label htmlFor="add-url" className="block text-xs mb-1.5 uppercase tracking-wide" style={{ color: 'var(--c-text-muted)', fontFamily: 'var(--font-mono)' }}>
                 URL объявления
               </label>
-              <input name="url" value={form.url} onChange={onChange} className="input-field" />
+              <input id="add-url" name="url" value={form.url} onChange={onChange} className="input-field" />
             </div>
             <div>
-              <label className="block text-xs mb-1.5 uppercase tracking-wide" style={{ color: 'var(--c-text-muted)', fontFamily: 'var(--font-mono)' }}>
+              <label htmlFor="add-thumbnail" className="block text-xs mb-1.5 uppercase tracking-wide" style={{ color: 'var(--c-text-muted)', fontFamily: 'var(--font-mono)' }}>
                 URL изображения
               </label>
-              <input name="thumbnail" value={form.thumbnail} onChange={onChange} className="input-field" />
+              <input id="add-thumbnail" name="thumbnail" value={form.thumbnail} onChange={onChange} className="input-field" />
             </div>
           </div>
         </div>

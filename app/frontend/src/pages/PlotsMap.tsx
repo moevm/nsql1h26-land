@@ -1,22 +1,8 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import { Link } from 'react-router-dom';
 import { MapContainer, TileLayer, CircleMarker, Popup, useMap } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import { fetchPlotsForMap, type MapPlot } from '../api';
-
-const SPB_CENTER: [number, number] = [59.93, 30.32];
-
-function formatPrice(p: number) {
-  if (p >= 1_000_000) return (p / 1_000_000).toFixed(1).replace('.0', '') + ' млн ₽';
-  if (p >= 1_000) return (p / 1_000).toFixed(0) + ' тыс ₽';
-  return p.toLocaleString('ru-RU') + ' ₽';
-}
-
-function scoreColor(score: number): string {
-  if (score >= 0.7) return '#5cb08a';
-  if (score >= 0.4) return '#c9a84c';
-  return '#c75f5f';
-}
+import { formatPrice, scoreHexColor, SPB_CENTER, getErrorMessage } from '../utils';
 
 function FitBounds({ plots }: { plots: MapPlot[] }) {
   const map = useMap();
@@ -43,34 +29,34 @@ export default function PlotsMap() {
   const [totalPages, setTotalPages] = useState(1);
   const [totalPlots, setTotalPlots] = useState(0);
 
-  const loadPage = useCallback(async (page: number) => {
+  const loadPage = useCallback(async (page: number, signal?: AbortSignal) => {
     try {
-      const r = await fetchPlotsForMap(page, 200);
+      const r = await fetchPlotsForMap(page, 200, signal);
       setPlots((prev) => [...prev, ...r.items]);
       setTotalPages(r.pages);
       setTotalPlots(r.total);
       setLoadedPages(page);
       return r.pages;
-    } catch (e: any) {
-      setError(e.message);
+    } catch (e) {
+      if (signal?.aborted) return 0;
+      setError(getErrorMessage(e));
       return 0;
     }
   }, []);
 
   useEffect(() => {
-    let cancelled = false;
+    const controller = new AbortController();
     (async () => {
       setLoading(true);
-      const pages = await loadPage(1);
-      if (cancelled || !pages) { setLoading(false); return; }
-      // Auto-load remaining pages
+      const pages = await loadPage(1, controller.signal);
+      if (controller.signal.aborted || !pages) { setLoading(false); return; }
       for (let p = 2; p <= pages; p++) {
-        if (cancelled) break;
-        await loadPage(p);
+        if (controller.signal.aborted) break;
+        await loadPage(p, controller.signal);
       }
-      setLoading(false);
+      if (!controller.signal.aborted) setLoading(false);
     })();
-    return () => { cancelled = true; };
+    return () => controller.abort();
   }, [loadPage]);
 
   const stats = useMemo(() => {
@@ -132,15 +118,15 @@ export default function PlotsMap() {
       <div className="flex gap-4 mb-4 text-xs" style={{ color: 'var(--c-text-dim)', fontFamily: 'var(--font-mono)' }}>
         <span className="flex items-center gap-1.5">
           <span className="inline-block w-3 h-3 rounded-full" style={{ background: '#5cb08a' }} />
-          score &ge; 70
+          <span>score &ge; 70</span>
         </span>
         <span className="flex items-center gap-1.5">
           <span className="inline-block w-3 h-3 rounded-full" style={{ background: '#c9a84c' }} />
-          score 40–69
+          <span>score 40–69</span>
         </span>
         <span className="flex items-center gap-1.5">
           <span className="inline-block w-3 h-3 rounded-full" style={{ background: '#c75f5f' }} />
-          score &lt; 40
+          <span>score &lt; 40</span>
         </span>
       </div>
 
@@ -171,7 +157,7 @@ export default function PlotsMap() {
             />
             {plots.length > 0 && <FitBounds plots={plots} />}
             {plots.map((plot) => {
-              const color = scoreColor(plot.total_score);
+              const color = scoreHexColor(plot.total_score);
               return (
                 <CircleMarker
                   key={plot._id}

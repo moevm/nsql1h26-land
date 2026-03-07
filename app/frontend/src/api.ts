@@ -1,5 +1,16 @@
 const API_BASE = '/api';
 
+/* ---------- Fetch helper ---------- */
+
+async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
+  const res = await fetch(url, init);
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.detail || `${res.status} ${res.statusText}`);
+  }
+  return res.json();
+}
+
 /* ---------- Plots ---------- */
 
 export interface PlotDistance {
@@ -85,6 +96,7 @@ export async function fetchPlots(
   sort = 'created_at',
   order = 'desc',
   filters: PlotFilters = {},
+  signal?: AbortSignal,
 ): Promise<PlotsListResponse> {
   const params = new URLSearchParams({
     page: String(page),
@@ -97,48 +109,41 @@ export async function fetchPlots(
       params.set(k, String(v));
     }
   }
-  const res = await fetch(`${API_BASE}/plots?${params}`);
-  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
-  return res.json();
+  return fetchJson(`${API_BASE}/plots?${params}`, { signal });
 }
 
-export async function fetchPlot(id: string): Promise<Plot> {
-  const res = await fetch(`${API_BASE}/plots/${id}`);
-  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
-  return res.json();
+export async function fetchPlot(id: string, signal?: AbortSignal): Promise<Plot> {
+  return fetchJson(`${API_BASE}/plots/${id}`, { signal });
 }
 
 export async function deletePlot(id: string): Promise<void> {
   const res = await fetch(`${API_BASE}/plots/${id}`, { method: 'DELETE' });
-  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.detail || `${res.status} ${res.statusText}`);
+  }
 }
 
 export async function createPlot(data: Record<string, unknown>): Promise<Plot> {
-  const res = await fetch(`${API_BASE}/plots`, {
+  return fetchJson(`${API_BASE}/plots`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
   });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.detail || `${res.status}`);
-  }
-  return res.json();
 }
 
 export async function searchPlots(
   query: string,
   page = 1,
   pageSize = 20,
+  signal?: AbortSignal,
 ): Promise<SearchResponse> {
   const params = new URLSearchParams({
     q: query,
     page: String(page),
     page_size: String(pageSize),
   });
-  const res = await fetch(`${API_BASE}/plots/search?${params}`);
-  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
-  return res.json();
+  return fetchJson(`${API_BASE}/plots/search?${params}`, { signal });
 }
 
 /* ---------- Map ---------- */
@@ -163,41 +168,31 @@ export interface MapResponse {
   pages: number;
 }
 
-export async function fetchPlotsForMap(page = 1, pageSize = 200): Promise<MapResponse> {
+export async function fetchPlotsForMap(page = 1, pageSize = 200, signal?: AbortSignal): Promise<MapResponse> {
   const params = new URLSearchParams({ page: String(page), page_size: String(pageSize) });
-  const res = await fetch(`${API_BASE}/plots/map?${params}`);
-  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
-  return res.json();
+  return fetchJson(`${API_BASE}/plots/map?${params}`, { signal });
 }
 
 /* ---------- Data IO ---------- */
 
 export async function exportAll(): Promise<Record<string, unknown[]>> {
-  const res = await fetch(`${API_BASE}/data/export`);
-  if (!res.ok) throw new Error(`${res.status}`);
-  return res.json();
+  return fetchJson(`${API_BASE}/data/export`);
 }
 
 export async function importPlots(records: unknown[]): Promise<{ inserted: number }> {
-  const res = await fetch(`${API_BASE}/data/import/plots`, {
+  return fetchJson(`${API_BASE}/data/import/plots`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(records),
   });
-  if (!res.ok) throw new Error(`${res.status}`);
-  return res.json();
 }
 
 export async function getStats(): Promise<Record<string, number>> {
-  const res = await fetch(`${API_BASE}/data/stats`);
-  if (!res.ok) throw new Error(`${res.status}`);
-  return res.json();
+  return fetchJson(`${API_BASE}/data/stats`);
 }
 
 export async function clearCollection(collection: string): Promise<{ deleted: number }> {
-  const res = await fetch(`${API_BASE}/data/clear/${collection}`, { method: 'DELETE' });
-  if (!res.ok) throw new Error(`${res.status}`);
-  return res.json();
+  return fetchJson(`${API_BASE}/data/clear/${collection}`, { method: 'DELETE' });
 }
 
 /* ---------- Infrastructure ---------- */

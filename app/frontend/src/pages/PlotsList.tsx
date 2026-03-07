@@ -1,63 +1,13 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, memo } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { Search, ChevronLeft, ChevronRight, ArrowDown, ArrowUp, SlidersHorizontal, X } from 'lucide-react';
+import { Search, ArrowDown, ArrowUp, SlidersHorizontal } from 'lucide-react';
 import { fetchPlots, type Plot, type PlotsListResponse, type PlotFilters } from '../api';
+import { formatPrice, getErrorMessage } from '../utils';
+import ScoreGauge from '../components/ScoreGauge';
+import Pagination from '../components/Pagination';
+import FilterPanel, { type FormState } from '../components/FilterPanel';
 
-function formatPrice(p: number) {
-  if (p >= 1_000_000) return (p / 1_000_000).toFixed(1).replace('.0', '') + ' млн ₽';
-  if (p >= 1_000) return (p / 1_000).toFixed(0) + ' тыс ₽';
-  return p.toLocaleString('ru-RU') + ' ₽';
-}
-
-function ScoreGauge({ value, size = 44 }: { value: number; size?: number }) {
-  const r = (size - 6) / 2;
-  const circumference = 2 * Math.PI * r;
-  const offset = circumference * (1 - value);
-  const color =
-    value >= 0.7 ? 'var(--c-green)' : value >= 0.4 ? 'var(--c-yellow)' : 'var(--c-red)';
-
-  return (
-    <svg width={size} height={size} className="gauge-ring">
-      <circle
-        cx={size / 2}
-        cy={size / 2}
-        r={r}
-        fill="none"
-        stroke="var(--c-border)"
-        strokeWidth="3"
-      />
-      <circle
-        cx={size / 2}
-        cy={size / 2}
-        r={r}
-        fill="none"
-        stroke={color}
-        strokeWidth="3"
-        strokeLinecap="round"
-        strokeDasharray={circumference}
-        strokeDashoffset={offset}
-        transform={`rotate(-90 ${size / 2} ${size / 2})`}
-        style={{ transition: 'stroke-dashoffset 1s cubic-bezier(0.4,0,0.2,1)' }}
-      />
-      <text
-        x={size / 2}
-        y={size / 2}
-        textAnchor="middle"
-        dominantBaseline="central"
-        style={{
-          fill: color,
-          fontSize: size * 0.26,
-          fontFamily: 'var(--font-mono)',
-          fontWeight: 600,
-        }}
-      >
-        {(value * 100).toFixed(0)}
-      </text>
-    </svg>
-  );
-}
-
-function PlotCard({ plot, index }: { plot: Plot; index: number }) {
+function PlotCard({ plot, index }: { readonly plot: Plot; readonly index: number }) {
   return (
     <Link
       to={`/plots/${plot._id}`}
@@ -155,6 +105,8 @@ function PlotCard({ plot, index }: { plot: Plot; index: number }) {
   );
 }
 
+const MemoPlotCard = memo(PlotCard);
+
 export default function PlotsList() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -189,13 +141,7 @@ export default function PlotsList() {
   const [filters, setFilters] = useState<PlotFilters>(getFilterFromParams);
 
   // Local form state for editing
-  const [formFilters, setFormFilters] = useState<{
-    min_price: string; max_price: string;
-    min_area: string; max_area: string;
-    min_pps: string; max_pps: string;
-    min_score: string; min_infra: string; min_feature: string;
-    location: string;
-  }>({
+  const [formFilters, setFormFilters] = useState<FormState>({
     min_price: searchParams.get('min_price') || '',
     max_price: searchParams.get('max_price') || '',
     min_area: searchParams.get('min_area') || '',
@@ -215,11 +161,17 @@ export default function PlotsList() {
   }, [getFilterFromParams]);
 
   useEffect(() => {
+    const controller = new AbortController();
     setLoading(true);
-    fetchPlots(currentPage, 20, sortField, sortOrder, filters)
+    fetchPlots(currentPage, 20, sortField, sortOrder, filters, controller.signal)
       .then(setData)
-      .catch((e) => setError(e.message))
-      .finally(() => setLoading(false));
+      .catch((e) => {
+        if (!controller.signal.aborted) setError(getErrorMessage(e));
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setLoading(false);
+      });
+    return () => controller.abort();
   }, [currentPage, sortField, sortOrder, filters]);
 
   function handleSearch(e: React.FormEvent) {
@@ -229,21 +181,21 @@ export default function PlotsList() {
     }
   }
 
-  function applyFilters() {
+  function applyFiltersFromForm(form: FormState) {
     const params = new URLSearchParams(searchParams);
     params.set('page', '1');
     // Clear old filter params
     ['min_price', 'max_price', 'min_area', 'max_area', 'min_pps', 'max_pps', 'min_score', 'min_infra', 'min_feature', 'location'].forEach(k => params.delete(k));
-    if (formFilters.min_price) params.set('min_price', formFilters.min_price);
-    if (formFilters.max_price) params.set('max_price', formFilters.max_price);
-    if (formFilters.min_area) params.set('min_area', formFilters.min_area);
-    if (formFilters.max_area) params.set('max_area', formFilters.max_area);
-    if (formFilters.min_pps) params.set('min_pps', formFilters.min_pps);
-    if (formFilters.max_pps) params.set('max_pps', formFilters.max_pps);
-    if (formFilters.min_score) params.set('min_score', formFilters.min_score);
-    if (formFilters.min_infra) params.set('min_infra', formFilters.min_infra);
-    if (formFilters.min_feature) params.set('min_feature', formFilters.min_feature);
-    if (formFilters.location) params.set('location', formFilters.location);
+    if (form.min_price) params.set('min_price', form.min_price);
+    if (form.max_price) params.set('max_price', form.max_price);
+    if (form.min_area) params.set('min_area', form.min_area);
+    if (form.max_area) params.set('max_area', form.max_area);
+    if (form.min_pps) params.set('min_pps', form.min_pps);
+    if (form.max_pps) params.set('max_pps', form.max_pps);
+    if (form.min_score) params.set('min_score', form.min_score);
+    if (form.min_infra) params.set('min_infra', form.min_infra);
+    if (form.min_feature) params.set('min_feature', form.min_feature);
+    if (form.location) params.set('location', form.location);
     setSearchParams(params);
     setShowFilters(false);
   }
@@ -274,14 +226,6 @@ export default function PlotsList() {
     params.set('page', '1');
     setSearchParams(params);
   }
-
-  const inputStyle: React.CSSProperties = {
-    background: 'var(--c-surface)',
-    border: '1px solid var(--c-border)',
-    color: 'var(--c-text)',
-    fontFamily: 'var(--font-mono)',
-    fontSize: '0.8rem',
-  };
 
   return (
     <div className="animate-fade-in">
@@ -383,218 +327,14 @@ export default function PlotsList() {
         </div>
       </div>
 
-      {/* Filter Panel */}
-      {showFilters && (
-        <div
-          className="rounded-xl p-5 mb-6 animate-fade-in"
-          style={{ background: 'var(--c-card)', border: '1px solid var(--c-border)' }}
-        >
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-sm font-semibold" style={{ color: 'var(--c-heading)', fontFamily: 'var(--font-display)' }}>
-              Фильтры
-            </h3>
-            <button onClick={() => setShowFilters(false)} style={{ color: 'var(--c-text-dim)' }}>
-              <X size={16} />
-            </button>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {/* Price range */}
-            <div>
-              <label className="text-xs uppercase tracking-wide mb-1.5 block" style={{ color: 'var(--c-text-dim)', fontFamily: 'var(--font-mono)' }}>
-                Цена, ₽
-              </label>
-              <div className="flex gap-2">
-                <input
-                  type="number"
-                  placeholder="от"
-                  value={formFilters.min_price}
-                  onChange={(e) => setFormFilters({ ...formFilters, min_price: e.target.value })}
-                  className="w-full px-3 py-2 rounded-lg"
-                  style={inputStyle}
-                />
-                <input
-                  type="number"
-                  placeholder="до"
-                  value={formFilters.max_price}
-                  onChange={(e) => setFormFilters({ ...formFilters, max_price: e.target.value })}
-                  className="w-full px-3 py-2 rounded-lg"
-                  style={inputStyle}
-                />
-              </div>
-            </div>
-
-            {/* Area range */}
-            <div>
-              <label className="text-xs uppercase tracking-wide mb-1.5 block" style={{ color: 'var(--c-text-dim)', fontFamily: 'var(--font-mono)' }}>
-                Площадь, сот.
-              </label>
-              <div className="flex gap-2">
-                <input
-                  type="number"
-                  placeholder="от"
-                  value={formFilters.min_area}
-                  onChange={(e) => setFormFilters({ ...formFilters, min_area: e.target.value })}
-                  className="w-full px-3 py-2 rounded-lg"
-                  style={inputStyle}
-                />
-                <input
-                  type="number"
-                  placeholder="до"
-                  value={formFilters.max_area}
-                  onChange={(e) => setFormFilters({ ...formFilters, max_area: e.target.value })}
-                  className="w-full px-3 py-2 rounded-lg"
-                  style={inputStyle}
-                />
-              </div>
-            </div>
-
-            {/* Price per sotka */}
-            <div>
-              <label className="text-xs uppercase tracking-wide mb-1.5 block" style={{ color: 'var(--c-text-dim)', fontFamily: 'var(--font-mono)' }}>
-                Цена за сотку, ₽
-              </label>
-              <div className="flex gap-2">
-                <input
-                  type="number"
-                  placeholder="от"
-                  value={formFilters.min_pps}
-                  onChange={(e) => setFormFilters({ ...formFilters, min_pps: e.target.value })}
-                  className="w-full px-3 py-2 rounded-lg"
-                  style={inputStyle}
-                />
-                <input
-                  type="number"
-                  placeholder="до"
-                  value={formFilters.max_pps}
-                  onChange={(e) => setFormFilters({ ...formFilters, max_pps: e.target.value })}
-                  className="w-full px-3 py-2 rounded-lg"
-                  style={inputStyle}
-                />
-              </div>
-            </div>
-
-            {/* Min total score */}
-            <div>
-              <label className="text-xs uppercase tracking-wide mb-1.5 block" style={{ color: 'var(--c-text-dim)', fontFamily: 'var(--font-mono)' }}>
-                Мин. общий скор (0–1)
-              </label>
-              <input
-                type="number"
-                step="0.05"
-                min="0"
-                max="1"
-                placeholder="0.00"
-                value={formFilters.min_score}
-                onChange={(e) => setFormFilters({ ...formFilters, min_score: e.target.value })}
-                className="w-full px-3 py-2 rounded-lg"
-                style={inputStyle}
-              />
-            </div>
-
-            {/* Min infra score */}
-            <div>
-              <label className="text-xs uppercase tracking-wide mb-1.5 block" style={{ color: 'var(--c-text-dim)', fontFamily: 'var(--font-mono)' }}>
-                Мин. скор инфраструктуры (0–1)
-              </label>
-              <input
-                type="number"
-                step="0.05"
-                min="0"
-                max="1"
-                placeholder="0.00"
-                value={formFilters.min_infra}
-                onChange={(e) => setFormFilters({ ...formFilters, min_infra: e.target.value })}
-                className="w-full px-3 py-2 rounded-lg"
-                style={inputStyle}
-              />
-            </div>
-
-            {/* Location */}
-            <div>
-              <label className="text-xs uppercase tracking-wide mb-1.5 block" style={{ color: 'var(--c-text-dim)', fontFamily: 'var(--font-mono)' }}>
-                Район / Населённый пункт
-              </label>
-              <input
-                type="text"
-                placeholder="Пушкин, Гатчина..."
-                value={formFilters.location}
-                onChange={(e) => setFormFilters({ ...formFilters, location: e.target.value })}
-                className="w-full px-3 py-2 rounded-lg"
-                style={{ ...inputStyle, fontFamily: 'var(--font-body)' }}
-              />
-            </div>
-          </div>
-
-          {/* Filter actions */}
-          <div className="flex gap-3 mt-5">
-            <button onClick={applyFilters} className="btn-primary text-sm">
-              Применить
-            </button>
-            <button onClick={clearFilters} className="btn-ghost text-sm">
-              Сбросить
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Active filter tags */}
-      {activeFilterCount > 0 && !showFilters && (
-        <div className="flex flex-wrap gap-2 mb-5">
-          {filters.min_price !== undefined && (
-            <span className="text-xs px-2.5 py-1 rounded-lg" style={{ background: 'var(--c-accent-dim)', color: 'var(--c-accent)' }}>
-              Цена от {Number(filters.min_price).toLocaleString('ru-RU')} ₽
-            </span>
-          )}
-          {filters.max_price !== undefined && (
-            <span className="text-xs px-2.5 py-1 rounded-lg" style={{ background: 'var(--c-accent-dim)', color: 'var(--c-accent)' }}>
-              Цена до {Number(filters.max_price).toLocaleString('ru-RU')} ₽
-            </span>
-          )}
-          {filters.min_area !== undefined && (
-            <span className="text-xs px-2.5 py-1 rounded-lg" style={{ background: 'var(--c-blue-dim)', color: 'var(--c-blue)' }}>
-              от {filters.min_area} сот.
-            </span>
-          )}
-          {filters.max_area !== undefined && (
-            <span className="text-xs px-2.5 py-1 rounded-lg" style={{ background: 'var(--c-blue-dim)', color: 'var(--c-blue)' }}>
-              до {filters.max_area} сот.
-            </span>
-          )}
-          {filters.min_price_per_sotka !== undefined && (
-            <span className="text-xs px-2.5 py-1 rounded-lg" style={{ background: 'var(--c-green-dim)', color: 'var(--c-green)' }}>
-              ₽/сот. от {Number(filters.min_price_per_sotka).toLocaleString('ru-RU')}
-            </span>
-          )}
-          {filters.max_price_per_sotka !== undefined && (
-            <span className="text-xs px-2.5 py-1 rounded-lg" style={{ background: 'var(--c-green-dim)', color: 'var(--c-green)' }}>
-              ₽/сот. до {Number(filters.max_price_per_sotka).toLocaleString('ru-RU')}
-            </span>
-          )}
-          {filters.min_score !== undefined && (
-            <span className="text-xs px-2.5 py-1 rounded-lg" style={{ background: 'var(--c-yellow-dim)', color: 'var(--c-yellow)' }}>
-              Score ≥ {filters.min_score}
-            </span>
-          )}
-          {filters.min_infra !== undefined && (
-            <span className="text-xs px-2.5 py-1 rounded-lg" style={{ background: 'var(--c-blue-dim)', color: 'var(--c-blue)' }}>
-              Инфра ≥ {filters.min_infra}
-            </span>
-          )}
-          {filters.location && (
-            <span className="text-xs px-2.5 py-1 rounded-lg" style={{ background: 'var(--c-accent-dim)', color: 'var(--c-accent)' }}>
-              {filters.location}
-            </span>
-          )}
-          <button
-            onClick={clearFilters}
-            className="text-xs px-2 py-1 rounded-lg flex items-center gap-1 transition-colors"
-            style={{ color: 'var(--c-red)', background: 'var(--c-red-dim)' }}
-          >
-            <X size={12} /> Сбросить
-          </button>
-        </div>
-      )}
+      <FilterPanel
+        visible={showFilters}
+        filters={filters}
+        initialForm={formFilters}
+        onApply={(form) => { setFormFilters(form); applyFiltersFromForm(form); }}
+        onClear={clearFilters}
+        onClose={() => setShowFilters(false)}
+      />
 
       {/* Loading / Error */}
       {loading && (
@@ -606,7 +346,7 @@ export default function PlotsList() {
         <p className="text-center py-16" style={{ color: 'var(--c-red)' }}>{error}</p>
       )}
 
-      {data && data.items.length === 0 && (
+      {data?.items.length === 0 && (
         <p className="text-center py-16" style={{ color: 'var(--c-text-dim)' }}>
           Нет объявлений
         </p>
@@ -617,56 +357,17 @@ export default function PlotsList() {
         <>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5 stagger-children">
             {data.items.map((p, i) => (
-              <PlotCard key={p._id} plot={p} index={i} />
+              <MemoPlotCard key={p._id} plot={p} index={i} />
             ))}
           </div>
 
           {/* Pagination */}
           {data.pages > 1 && (
-            <div className="flex justify-center items-center gap-2 mt-10">
-              <button
-                onClick={() => changePage(currentPage - 1)}
-                disabled={currentPage <= 1}
-                className="btn-ghost text-sm disabled:opacity-30"
-              >
-                <ChevronLeft size={16} />
-              </button>
-              {Array.from({ length: Math.min(data.pages, 7) }, (_, i) => {
-                let p: number;
-                if (data.pages <= 7) {
-                  p = i + 1;
-                } else if (currentPage <= 4) {
-                  p = i + 1;
-                } else if (currentPage >= data.pages - 3) {
-                  p = data.pages - 6 + i;
-                } else {
-                  p = currentPage - 3 + i;
-                }
-                return (
-                  <button
-                    key={p}
-                    onClick={() => changePage(p)}
-                    className="w-9 h-9 rounded-lg text-sm font-medium transition-all duration-200"
-                    style={{
-                      background:
-                        p === currentPage ? 'var(--c-accent)' : 'var(--c-surface)',
-                      color: p === currentPage ? 'var(--c-bg)' : 'var(--c-text-muted)',
-                      border: `1px solid ${p === currentPage ? 'var(--c-accent)' : 'var(--c-border)'}`,
-                      fontFamily: 'var(--font-mono)',
-                    }}
-                  >
-                    {p}
-                  </button>
-                );
-              })}
-              <button
-                onClick={() => changePage(currentPage + 1)}
-                disabled={currentPage >= data.pages}
-                className="btn-ghost text-sm disabled:opacity-30"
-              >
-                <ChevronRight size={16} />
-              </button>
-            </div>
+            <Pagination
+              currentPage={currentPage}
+              totalPages={data.pages}
+              onPageChange={changePage}
+            />
           )}
         </>
       )}

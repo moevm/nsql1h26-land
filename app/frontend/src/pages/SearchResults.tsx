@@ -1,33 +1,10 @@
 import { useState, useEffect } from 'react';
 import { useSearchParams, Link } from 'react-router-dom';
-import { Search, ChevronLeft, ChevronRight } from 'lucide-react';
-import { searchPlots, type Plot, type SearchResponse } from '../api';
-
-function formatPrice(p: number) {
-  if (p >= 1_000_000) return (p / 1_000_000).toFixed(1).replace('.0', '') + ' млн ₽';
-  if (p >= 1_000) return (p / 1_000).toFixed(0) + ' тыс ₽';
-  return p.toLocaleString('ru-RU') + ' ₽';
-}
-
-function MiniGauge({ value, color, size = 32 }: { value: number; color: string; size?: number }) {
-  const r = (size - 5) / 2;
-  const c = 2 * Math.PI * r;
-  return (
-    <svg width={size} height={size}>
-      <circle cx={size/2} cy={size/2} r={r} fill="none" stroke="var(--c-border)" strokeWidth="2.5" />
-      <circle
-        cx={size/2} cy={size/2} r={r} fill="none" stroke={color} strokeWidth="2.5"
-        strokeLinecap="round" strokeDasharray={c} strokeDashoffset={c * (1 - value)}
-        transform={`rotate(-90 ${size/2} ${size/2})`}
-        style={{ transition: 'stroke-dashoffset 0.8s ease' }}
-      />
-      <text x={size/2} y={size/2} textAnchor="middle" dominantBaseline="central"
-        style={{ fill: color, fontSize: size * 0.3, fontFamily: 'var(--font-mono)', fontWeight: 600 }}>
-        {(value * 100).toFixed(0)}
-      </text>
-    </svg>
-  );
-}
+import { Search } from 'lucide-react';
+import { searchPlots, type SearchResponse } from '../api';
+import { formatPrice, getErrorMessage } from '../utils';
+import ScoreGauge from '../components/ScoreGauge';
+import Pagination from '../components/Pagination';
 
 export default function SearchResults() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -41,12 +18,18 @@ export default function SearchResults() {
 
   useEffect(() => {
     if (!query) return;
+    const controller = new AbortController();
     setLoading(true);
     setError('');
-    searchPlots(query, currentPage, 20)
+    searchPlots(query, currentPage, 20, controller.signal)
       .then(setData)
-      .catch((e) => setError(e.message))
-      .finally(() => setLoading(false));
+      .catch((e) => {
+        if (!controller.signal.aborted) setError(getErrorMessage(e));
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setLoading(false);
+      });
+    return () => controller.abort();
   }, [query, currentPage]);
 
   function handleSearch(e: React.FormEvent) {
@@ -156,7 +139,7 @@ export default function SearchResults() {
 
                 {/* Score badges */}
                 <div className="flex items-center gap-3 mt-2">
-                  <MiniGauge value={plot.total_score} color="var(--c-accent)" />
+                  <ScoreGauge value={plot.total_score} size={32} color="var(--c-accent)" />
                   {plot.jina_score != null && (
                     <span className="text-xs px-2 py-0.5 rounded-md"
                       style={{ background: 'var(--c-blue-dim)', color: 'var(--c-blue)', fontFamily: 'var(--font-mono)', fontSize: '0.65rem' }}>
@@ -183,49 +166,11 @@ export default function SearchResults() {
 
       {/* Pagination */}
       {pages > 1 && (
-        <div className="flex justify-center items-center gap-2 mt-10">
-          <button
-            onClick={() => changePage(currentPage - 1)}
-            disabled={currentPage <= 1}
-            className="btn-ghost text-sm disabled:opacity-30"
-          >
-            <ChevronLeft size={16} />
-          </button>
-          {Array.from({ length: Math.min(pages, 7) }, (_, i) => {
-            let p: number;
-            if (pages <= 7) {
-              p = i + 1;
-            } else if (currentPage <= 4) {
-              p = i + 1;
-            } else if (currentPage >= pages - 3) {
-              p = pages - 6 + i;
-            } else {
-              p = currentPage - 3 + i;
-            }
-            return (
-              <button
-                key={p}
-                onClick={() => changePage(p)}
-                className="w-9 h-9 rounded-lg text-sm font-medium transition-all duration-200"
-                style={{
-                  background: p === currentPage ? 'var(--c-accent)' : 'var(--c-surface)',
-                  color: p === currentPage ? 'var(--c-bg)' : 'var(--c-text-muted)',
-                  border: `1px solid ${p === currentPage ? 'var(--c-accent)' : 'var(--c-border)'}`,
-                  fontFamily: 'var(--font-mono)',
-                }}
-              >
-                {p}
-              </button>
-            );
-          })}
-          <button
-            onClick={() => changePage(currentPage + 1)}
-            disabled={currentPage >= pages}
-            className="btn-ghost text-sm disabled:opacity-30"
-          >
-            <ChevronRight size={16} />
-          </button>
-        </div>
+        <Pagination
+          currentPage={currentPage}
+          totalPages={pages}
+          onPageChange={changePage}
+        />
       )}
 
       {/* Expand hint: shown on last page when more candidates are available */}
