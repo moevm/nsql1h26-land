@@ -1,0 +1,81 @@
+@startuml use_cases
+
+!theme plain
+skinparam backgroundColor #FAFAFA
+skinparam actorStyle awesome
+skinparam packageStyle rectangle
+skinparam usecaseFontSize 12
+skinparam defaultFontName "Segoe UI"
+skinparam shadowing false
+
+title Диаграмма вариантов использования\n«Земельные участки» — Сервис поиска и анализа земельных участков
+
+left to right direction
+
+' ============================
+' Акторы
+' ============================
+actor "Пользователь" as User
+actor "Администратор" as Admin
+Admin --|> User
+
+' ============================
+' Система
+' ============================
+
+  ' --- Каталог и просмотр ---
+  package "Каталог" {
+    usecase "UC1: Просмотр каталога\nучастков" as UC1
+    usecase "UC2: Фильтрация\nучастков" as UC2
+    usecase "UC3: Сортировка\nучастков" as UC3
+  }
+
+  ' --- Поиск ---
+  package "Поиск" {
+    usecase "UC4: Семантический\nпоиск участков" as UC4
+  }
+
+  ' --- Детали и карта ---
+  package "Просмотр" {
+    usecase "UC5: Просмотр деталей\nучастка" as UC5
+    usecase "UC6: Просмотр карты\nучастков" as UC6
+    usecase "UC7: Переход\nна Авито" as UC7
+  }
+
+  ' --- Управление своими участками ---
+  package "Управление своими участками" {
+    usecase "UC8: Добавление\nнового участка" as UC8
+    usecase "UC9: Редактирование\nсвоего участка" as UC9
+    usecase "UC10: Удаление\nсвоего участка" as UC10
+  }
+
+  ' --- Администрирование ---
+  package "Администрирование" {
+    usecase "UC11: Экспорт данных" as UC11
+    usecase "UC12: Импорт данных" as UC12
+    usecase "UC13: Просмотр\nстатистики" as UC13
+    usecase "UC14: Редактирование\nлюбого участка" as UC14
+    usecase "UC15: Удаление\nлюбого участка" as UC15
+  }
+
+' ============================
+' Связи Пользователя
+' ============================
+User --> "Управление своими участками"
+User --> "Просмотр"
+User --> "Каталог"
+User --> "Поиск"
+
+' ============================
+' Связи Администратора
+' ============================
+Admin --> "Администрирование"
+
+' ============================
+' Include / Extend
+' ============================
+UC1 ..> UC2 : <<extend>>
+UC1 ..> UC3 : <<extend>>
+UC5 ..> UC7 : <<extend>>
+
+@enduml
