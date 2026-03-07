@@ -135,6 +135,15 @@ export default function PlotDetail() {
         <p className="text-sm" style={{ color: 'var(--c-text-muted)' }}>
           {plot.location} · {plot.address}
         </p>
+        {(plot.created_at || plot.updated_at) && (
+          <p className="text-xs mt-2" style={{ color: 'var(--c-text-dim)', fontFamily: 'var(--font-mono)' }}>
+            {plot.updated_at
+              ? `Изменено ${new Date(plot.updated_at).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' })}`
+              : plot.created_at
+                ? `Создано ${new Date(plot.created_at).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' })}`
+                : ''}
+          </p>
+        )}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
@@ -298,6 +307,8 @@ export default function PlotDetail() {
             <p>COORD {plot.lat?.toFixed(6)}, {plot.lon?.toFixed(6)}</p>
             {plot.avito_id && <p className="mt-1">AVITO #{plot.avito_id}</p>}
             {plot.owner_name && <p className="mt-1">OWNER: {plot.owner_name}</p>}
+            {plot.created_at && <p className="mt-1">СОЗДАНО: {new Date(plot.created_at).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</p>}
+            {plot.updated_at && <p className="mt-1">ИЗМЕНЕНО: {new Date(plot.updated_at).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</p>}
           </div>
         </div>
       </div>

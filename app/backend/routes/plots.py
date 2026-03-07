@@ -329,6 +329,8 @@ async def update_plot(plot_id: str, data: PlotUpdate, user: dict = Depends(get_c
         price_per_sotka=price_per_sotka,
     )
 
+    updates["updated_at"] = datetime.now(timezone.utc)
+
     await db[COL_PLOTS].update_one({"_id": oid}, {"$set": updates})
 
     doc = await db[COL_PLOTS].find_one({"_id": oid}, {"embedding": 0})

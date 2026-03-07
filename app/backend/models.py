@@ -85,6 +85,7 @@ class PlotOut(BaseModel):
     negative_score: float = 0
     total_score: float = 0
     created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
     owner_id: Optional[str] = None
     owner_name: Optional[str] = None
 

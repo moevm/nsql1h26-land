@@ -4,7 +4,7 @@ import { MapContainer, TileLayer, Marker, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { createPlot } from '../api';
-import { SPB_CENTER, getErrorMessage } from '../utils';
+import { SPB_CENTER, getErrorMessage, formatPrice } from '../utils';
 import { invalidateCache } from '../cache';
 
 // Fix default marker icon
@@ -187,7 +187,7 @@ export default function AddPlot() {
             <label htmlFor="add-title" className="block text-xs mb-1.5 uppercase tracking-wide" style={{ color: 'var(--c-text-muted)', fontFamily: 'var(--font-mono)' }}>
               Заголовок *
             </label>
-            <input id="add-title" name="title" value={form.title} onChange={onChange} required className="input-field" />
+            <input id="add-title" name="title" value={form.title} onChange={onChange} required className="input-field" placeholder="Земельный участок 10 соток, ИЖС" />
           </div>
 
           <div>
@@ -201,6 +201,7 @@ export default function AddPlot() {
               onChange={onChange}
               rows={5}
               className="input-field"
+              placeholder="Опишите участок: коммуникации, особенности, окружение..."
             />
           </div>
 
@@ -209,13 +210,19 @@ export default function AddPlot() {
               <label htmlFor="add-price" className="block text-xs mb-1.5 uppercase tracking-wide" style={{ color: 'var(--c-text-muted)', fontFamily: 'var(--font-mono)' }}>
                 Цена (₽)
               </label>
-              <input id="add-price" name="price" type="number" value={form.price} onChange={onChange} className="input-field" />
+              <input id="add-price" name="price" type="number" step="10000" min="0" placeholder="1 500 000" value={form.price} onChange={onChange} className="input-field" />
+              {form.price && Number(form.price) > 0 && (
+                <p className="text-xs mt-1" style={{ color: 'var(--c-accent)', fontFamily: 'var(--font-mono)' }}>{formatPrice(Number(form.price))}</p>
+              )}
             </div>
             <div>
               <label htmlFor="add-area" className="block text-xs mb-1.5 uppercase tracking-wide" style={{ color: 'var(--c-text-muted)', fontFamily: 'var(--font-mono)' }}>
                 Площадь (сотки)
               </label>
-              <input id="add-area" name="area_sotki" type="number" step="0.1" value={form.area_sotki} onChange={onChange} className="input-field" />
+              <input id="add-area" name="area_sotki" type="number" step="0.5" min="0" placeholder="10" value={form.area_sotki} onChange={onChange} className="input-field" />
+              {form.price && form.area_sotki && Number(form.area_sotki) > 0 && (
+                <p className="text-xs mt-1" style={{ color: 'var(--c-text-muted)', fontFamily: 'var(--font-mono)' }}>≈ {formatPrice(Number(form.price) / Number(form.area_sotki))}/сот.</p>
+              )}
             </div>
           </div>
 

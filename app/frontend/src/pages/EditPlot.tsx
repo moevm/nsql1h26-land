@@ -4,7 +4,7 @@ import { MapContainer, TileLayer, Marker, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { fetchPlot, updatePlot, type Plot } from '../api';
-import { SPB_CENTER, getErrorMessage } from '../utils';
+import { SPB_CENTER, getErrorMessage, formatPrice } from '../utils';
 import { useAuth } from '../contexts/AuthContext';
 import { invalidateCache } from '../cache';
 
@@ -176,20 +176,26 @@ export default function EditPlot() {
           </h2>
           <div>
             <label htmlFor="edit-title" className="block text-xs mb-1.5 uppercase tracking-wide" style={{ color: 'var(--c-text-muted)', fontFamily: 'var(--font-mono)' }}>Заголовок *</label>
-            <input id="edit-title" name="title" value={form.title} onChange={onChange} required className="input-field" />
+            <input id="edit-title" name="title" value={form.title} onChange={onChange} required className="input-field" placeholder="Земельный участок 10 соток, ИЖС" />
           </div>
           <div>
             <label htmlFor="edit-description" className="block text-xs mb-1.5 uppercase tracking-wide" style={{ color: 'var(--c-text-muted)', fontFamily: 'var(--font-mono)' }}>Описание</label>
-            <textarea id="edit-description" name="description" value={form.description} onChange={onChange} rows={5} className="input-field" />
+            <textarea id="edit-description" name="description" value={form.description} onChange={onChange} rows={5} className="input-field" placeholder="Опишите участок: коммуникации, особенности, окружение..." />
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label htmlFor="edit-price" className="block text-xs mb-1.5 uppercase tracking-wide" style={{ color: 'var(--c-text-muted)', fontFamily: 'var(--font-mono)' }}>Цена (₽)</label>
-              <input id="edit-price" name="price" type="number" value={form.price} onChange={onChange} className="input-field" />
+              <input id="edit-price" name="price" type="number" step="10000" min="0" placeholder="1 500 000" value={form.price} onChange={onChange} className="input-field" />
+              {form.price && Number(form.price) > 0 && (
+                <p className="text-xs mt-1" style={{ color: 'var(--c-accent)', fontFamily: 'var(--font-mono)' }}>{formatPrice(Number(form.price))}</p>
+              )}
             </div>
             <div>
               <label htmlFor="edit-area" className="block text-xs mb-1.5 uppercase tracking-wide" style={{ color: 'var(--c-text-muted)', fontFamily: 'var(--font-mono)' }}>Площадь (сотки)</label>
-              <input id="edit-area" name="area_sotki" type="number" step="0.1" value={form.area_sotki} onChange={onChange} className="input-field" />
+              <input id="edit-area" name="area_sotki" type="number" step="0.5" min="0" placeholder="10" value={form.area_sotki} onChange={onChange} className="input-field" />
+              {form.price && form.area_sotki && Number(form.area_sotki) > 0 && (
+                <p className="text-xs mt-1" style={{ color: 'var(--c-text-muted)', fontFamily: 'var(--font-mono)' }}>≈ {formatPrice(Number(form.price) / Number(form.area_sotki))}/сот.</p>
+              )}
             </div>
           </div>
           <div className="grid grid-cols-2 gap-4">
