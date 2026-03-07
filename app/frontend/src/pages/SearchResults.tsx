@@ -5,6 +5,9 @@ import { searchPlots, type SearchResponse } from '../api';
 import { formatPrice, getErrorMessage } from '../utils';
 import ScoreGauge from '../components/ScoreGauge';
 import Pagination from '../components/Pagination';
+import { getCached, setCache } from '../cache';
+
+const SEARCH_CACHE_TTL = 60_000; // 1 min
 
 export default function SearchResults() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -18,11 +21,20 @@ export default function SearchResults() {
 
   useEffect(() => {
     if (!query) return;
+    const cacheKey = `search:${query}:${currentPage}`;
+    const cached = getCached<SearchResponse>(cacheKey, SEARCH_CACHE_TTL);
+    if (cached) {
+      setData(cached);
+      return;
+    }
     const controller = new AbortController();
     setLoading(true);
     setError('');
     searchPlots(query, currentPage, 20, controller.signal)
-      .then(setData)
+      .then((result) => {
+        setData(result);
+        setCache(cacheKey, result);
+      })
       .catch((e) => {
         if (!controller.signal.aborted) setError(getErrorMessage(e));
       })

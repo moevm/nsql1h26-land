@@ -2,13 +2,31 @@ import { useState, useEffect, useRef } from 'react';
 import { Download, Upload, RefreshCw, X, Layers, TrainFront, Hospital as HospitalIcon, School as SchoolIcon, Baby, Store, Package, BusFront, AlertTriangle } from 'lucide-react';
 import { exportAll, importPlots, getStats, clearCollection } from '../api';
 import { getErrorMessage } from '../utils';
+import { useAuth } from '../contexts/AuthContext';
 
 export default function AdminPanel() {
+  const { user, isAdmin } = useAuth();
   const [stats, setStats] = useState<Record<string, number> | null>(null);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const fileInput = useRef<HTMLInputElement>(null);
+
+  if (!user) {
+    return (
+      <div className="text-center py-16">
+        <p style={{ color: 'var(--c-text-dim)' }}>Необходимо войти в систему</p>
+      </div>
+    );
+  }
+
+  if (!isAdmin) {
+    return (
+      <div className="text-center py-16">
+        <p style={{ color: 'var(--c-red)' }}>Доступ только для администраторов</p>
+      </div>
+    );
+  }
 
   async function loadStats() {
     try {

@@ -1,9 +1,11 @@
 import { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
-import { TrainFront, Hospital, School, Baby, ShoppingCart, Package, Bus, AlertTriangle, ArrowLeft, ExternalLink } from 'lucide-react';
+import { useParams, useNavigate, Link } from 'react-router-dom';
+import { TrainFront, Hospital, School, Baby, ShoppingCart, Package, Bus, AlertTriangle, ArrowLeft, ExternalLink, Pencil } from 'lucide-react';
 import { fetchPlot, deletePlot, type Plot } from '../api';
 import { formatPriceFull, getErrorMessage } from '../utils';
 import ScoreGauge from '../components/ScoreGauge';
+import { useAuth } from '../contexts/AuthContext';
+import { getCached, setCache, invalidateCache } from '../cache';
 
 function distanceColor(km: number): string {
   if (km < 5) return 'var(--c-green)';
@@ -38,16 +40,27 @@ function DistanceRow({ icon: Icon, label, name, km }: { readonly icon: React.Ele
 export default function PlotDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const { user, isAdmin } = useAuth();
   const [plot, setPlot] = useState<Plot | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [deleting, setDeleting] = useState(false);
 
+  const canEdit = plot && user && (isAdmin || plot.owner_id === user._id);
+  const canDelete = canEdit;
+
   useEffect(() => {
     if (!id) return;
+    const cacheKey = `plot:${id}`;
+    const cached = getCached<Plot>(cacheKey, 120_000);
+    if (cached) {
+      setPlot(cached);
+      setLoading(false);
+      return;
+    }
     const controller = new AbortController();
     fetchPlot(id, controller.signal)
-      .then(setPlot)
+      .then((p) => { setPlot(p); setCache(cacheKey, p); })
       .catch((e) => {
         if (!controller.signal.aborted) setError(getErrorMessage(e));
       })
@@ -62,6 +75,9 @@ export default function PlotDetail() {
     setDeleting(true);
     try {
       await deletePlot(id);
+      invalidateCache('plots');
+      invalidateCache('plot:');
+      invalidateCache('map-plots');
       navigate('/');
     } catch (e) {
       setError(getErrorMessage(e));
@@ -78,7 +94,7 @@ export default function PlotDetail() {
 
   return (
     <div className="animate-fade-in-up max-w-5xl mx-auto">
-      {/* Back + delete */}
+      {/* Back + edit + delete */}
       <div className="flex items-center justify-between mb-6">
         <button
           onClick={() => navigate(-1)}
@@ -86,13 +102,26 @@ export default function PlotDetail() {
         >
           <ArrowLeft size={16} className="inline-block" /> Назад
         </button>
-        <button
-          onClick={handleDelete}
-          disabled={deleting}
-          className="btn-danger text-sm"
-        >
-          {deleting ? 'Удаление...' : 'Удалить'}
-        </button>
+        <div className="flex items-center gap-2">
+          {canEdit && (
+            <Link
+              to={`/plots/${id}/edit`}
+              className="btn-ghost text-sm flex items-center gap-2"
+              style={{ color: 'var(--c-accent)', borderColor: 'var(--c-accent)' }}
+            >
+              <Pencil size={14} /> Редактировать
+            </Link>
+          )}
+          {canDelete && (
+            <button
+              onClick={handleDelete}
+              disabled={deleting}
+              className="btn-danger text-sm"
+            >
+              {deleting ? 'Удаление...' : 'Удалить'}
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Title section */}
@@ -268,6 +297,7 @@ export default function PlotDetail() {
           >
             <p>COORD {plot.lat?.toFixed(6)}, {plot.lon?.toFixed(6)}</p>
             {plot.avito_id && <p className="mt-1">AVITO #{plot.avito_id}</p>}
+            {plot.owner_name && <p className="mt-1">OWNER: {plot.owner_name}</p>}
           </div>
         </div>
       </div>

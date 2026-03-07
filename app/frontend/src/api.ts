@@ -1,14 +1,52 @@
 const API_BASE = '/api';
 
+/* ---------- Auth helpers ---------- */
+
+function getAuthHeaders(): Record<string, string> {
+  const token = localStorage.getItem('token');
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
 /* ---------- Fetch helper ---------- */
 
 async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(url, init);
+  const headers: Record<string, string> = {
+    ...getAuthHeaders(),
+    ...(init?.headers as Record<string, string> || {}),
+  };
+  const res = await fetch(url, { ...init, headers });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
     throw new Error(body.detail || `${res.status} ${res.statusText}`);
   }
   return res.json();
+}
+
+/* ---------- Auth ---------- */
+
+export interface AuthResult {
+  token: string;
+  user: { _id: string; username: string; role: string };
+}
+
+export async function loginUser(username: string, password: string): Promise<AuthResult> {
+  return fetchJson(`${API_BASE}/auth/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username, password }),
+  });
+}
+
+export async function registerUser(username: string, password: string): Promise<AuthResult> {
+  return fetchJson(`${API_BASE}/auth/register`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username, password }),
+  });
+}
+
+export async function getMe(): Promise<{ _id: string; username: string; role: string }> {
+  return fetchJson(`${API_BASE}/auth/me`);
 }
 
 /* ---------- Plots ---------- */
@@ -54,6 +92,8 @@ export interface Plot {
   negative_score: number;
   total_score: number;
   created_at?: string;
+  owner_id?: string;
+  owner_name?: string;
   // search fields
   search_score?: number;
   jina_score?: number;
@@ -117,7 +157,10 @@ export async function fetchPlot(id: string, signal?: AbortSignal): Promise<Plot>
 }
 
 export async function deletePlot(id: string): Promise<void> {
-  const res = await fetch(`${API_BASE}/plots/${id}`, { method: 'DELETE' });
+  const res = await fetch(`${API_BASE}/plots/${id}`, {
+    method: 'DELETE',
+    headers: { ...getAuthHeaders() },
+  });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
     throw new Error(body.detail || `${res.status} ${res.statusText}`);
@@ -127,6 +170,14 @@ export async function deletePlot(id: string): Promise<void> {
 export async function createPlot(data: Record<string, unknown>): Promise<Plot> {
   return fetchJson(`${API_BASE}/plots`, {
     method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+}
+
+export async function updatePlot(id: string, data: Record<string, unknown>): Promise<Plot> {
+  return fetchJson(`${API_BASE}/plots/${id}`, {
+    method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
   });

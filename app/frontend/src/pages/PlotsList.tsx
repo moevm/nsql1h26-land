@@ -6,6 +6,9 @@ import { formatPrice, getErrorMessage } from '../utils';
 import ScoreGauge from '../components/ScoreGauge';
 import Pagination from '../components/Pagination';
 import FilterPanel, { type FormState } from '../components/FilterPanel';
+import { getCached, setCache } from '../cache';
+
+const LIST_CACHE_TTL = 600_000; // 10 min
 
 function PlotCard({ plot, index }: { readonly plot: Plot; readonly index: number }) {
   return (
@@ -161,10 +164,20 @@ export default function PlotsList() {
   }, [getFilterFromParams]);
 
   useEffect(() => {
+    const cacheKey = `plots:${currentPage}:${sortField}:${sortOrder}:${JSON.stringify(filters)}`;
+    const cached = getCached<PlotsListResponse>(cacheKey, LIST_CACHE_TTL);
+    if (cached) {
+      setData(cached);
+      setLoading(false);
+      return;
+    }
     const controller = new AbortController();
     setLoading(true);
     fetchPlots(currentPage, 20, sortField, sortOrder, filters, controller.signal)
-      .then(setData)
+      .then((result) => {
+        setData(result);
+        setCache(cacheKey, result);
+      })
       .catch((e) => {
         if (!controller.signal.aborted) setError(getErrorMessage(e));
       })

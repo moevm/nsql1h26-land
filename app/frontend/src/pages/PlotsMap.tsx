@@ -1,13 +1,59 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
-import { MapContainer, TileLayer, CircleMarker, Popup, useMap } from 'react-leaflet';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
+import MarkerClusterGroup from 'react-leaflet-cluster';
+import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { fetchPlotsForMap, type MapPlot } from '../api';
 import { formatPrice, scoreHexColor, SPB_CENTER, getErrorMessage } from '../utils';
+import { getCached, setCache } from '../cache';
+
+const MAP_CACHE_KEY = 'map-plots';
+const MAP_CACHE_TTL = 120_000; // 2 min
+
+/** Map from marker id to total_score, used by cluster icon. */
+const _scoreById = new Map<string, number>();
+
+/** Creates a small colored circle DivIcon based on score. */
+function createScoreIcon(score: number) {
+  const color = scoreHexColor(score);
+  return L.divIcon({
+    html: `<div style="width:14px;height:14px;border-radius:50%;background:${color};border:2px solid ${color};opacity:0.85;box-shadow:0 0 6px ${color}44;"></div>`,
+    className: '',
+    iconSize: [14, 14],
+    iconAnchor: [7, 7],
+  });
+}
+
+/** Custom cluster icon matching the dark theme. */
+function createClusterIcon(cluster: any) {
+  const count = cluster.getChildCount();
+  const markers = cluster.getAllChildMarkers();
+  // Average score color
+  let totalScore = 0;
+  markers.forEach((m: any) => { totalScore += _scoreById.get(m.options.alt ?? '') || 0; });
+  const avgScore = markers.length > 0 ? totalScore / markers.length : 0;
+  const color = scoreHexColor(avgScore);
+
+  const size = count < 10 ? 36 : count < 50 ? 44 : 52;
+  return L.divIcon({
+    html: `<div style="
+      width:${size}px;height:${size}px;border-radius:50%;
+      background:${color}33;border:2px solid ${color};
+      display:flex;align-items:center;justify-content:center;
+      font-family:var(--font-mono);font-weight:700;font-size:${size > 44 ? 13 : 11}px;
+      color:${color};
+    ">${count}</div>`,
+    className: '',
+    iconSize: [size, size],
+    iconAnchor: [size / 2, size / 2],
+  });
+}
 
 function FitBounds({ plots }: { plots: MapPlot[] }) {
   const map = useMap();
+  const fitted = useRef(false);
   useEffect(() => {
-    if (plots.length === 0) return;
+    if (plots.length === 0 || fitted.current) return;
     const lats = plots.map((p) => p.lat);
     const lons = plots.map((p) => p.lon);
     map.fitBounds(
@@ -17,6 +63,7 @@ function FitBounds({ plots }: { plots: MapPlot[] }) {
       ],
       { maxZoom: 12, padding: [30, 30] },
     );
+    fitted.current = true;
   }, [plots, map]);
   return null;
 }
@@ -36,25 +83,38 @@ export default function PlotsMap() {
       setTotalPages(r.pages);
       setTotalPlots(r.total);
       setLoadedPages(page);
-      return r.pages;
+      return r;
     } catch (e) {
-      if (signal?.aborted) return 0;
+      if (signal?.aborted) return null;
       setError(getErrorMessage(e));
-      return 0;
+      return null;
     }
   }, []);
 
   useEffect(() => {
+    // Try cache first
+    const cached = getCached<MapPlot[]>(MAP_CACHE_KEY, MAP_CACHE_TTL);
+    if (cached && cached.length > 0) {
+      setPlots(cached);
+      setTotalPlots(cached.length);
+      setLoading(false);
+      return;
+    }
+
     const controller = new AbortController();
     (async () => {
       setLoading(true);
-      const pages = await loadPage(1, controller.signal);
-      if (controller.signal.aborted || !pages) { setLoading(false); return; }
-      for (let p = 2; p <= pages; p++) {
+      const first = await loadPage(1, controller.signal);
+      if (controller.signal.aborted || !first) { setLoading(false); return; }
+      for (let p = 2; p <= first.pages; p++) {
         if (controller.signal.aborted) break;
         await loadPage(p, controller.signal);
       }
-      if (!controller.signal.aborted) setLoading(false);
+      if (!controller.signal.aborted) {
+        setLoading(false);
+        // Cache all loaded plots
+        setPlots((all) => { setCache(MAP_CACHE_KEY, all); return all; });
+      }
     })();
     return () => controller.abort();
   }, [loadPage]);
@@ -62,6 +122,9 @@ export default function PlotsMap() {
   const stats = useMemo(() => {
     if (plots.length === 0) return null;
     const scores = plots.map((p) => p.total_score);
+    // Populate score map for cluster icon
+    _scoreById.clear();
+    for (const p of plots) _scoreById.set(p._id, p.total_score);
     return {
       count: plots.length,
       avgScore: (scores.reduce((a, b) => a + b, 0) / scores.length).toFixed(2),
@@ -156,89 +219,91 @@ export default function PlotsMap() {
               url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
             />
             {plots.length > 0 && <FitBounds plots={plots} />}
-            {plots.map((plot) => {
-              const color = scoreHexColor(plot.total_score);
-              return (
-                <CircleMarker
-                  key={plot._id}
-                  center={[plot.lat, plot.lon]}
-                  radius={7}
-                  pathOptions={{
-                    color,
-                    fillColor: color,
-                    fillOpacity: 0.7,
-                    weight: 2,
-                    opacity: 0.9,
-                  }}
-                >
-                  <Popup>
-                    <div style={{ fontFamily: 'var(--font-body)', minWidth: '200px' }}>
-                      <p
-                        style={{
-                          fontFamily: 'var(--font-body)',
-                          fontWeight: 600,
-                          fontSize: '0.875rem',
-                          marginBottom: '4px',
-                          color: '#1a1a1a',
-                        }}
-                      >
-                        {plot.title}
-                      </p>
-                      <p style={{ fontSize: '0.75rem', color: '#666', marginBottom: '6px' }}>
-                        {plot.location}
-                      </p>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
-                        <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, color: '#b8863e' }}>
-                          {formatPrice(plot.price)}
-                        </span>
-                        {plot.area_sotki && (
-                          <span style={{ fontSize: '0.75rem', color: '#888' }}>
-                            {plot.area_sotki} сот.
+            <MarkerClusterGroup
+              chunkedLoading
+              maxClusterRadius={60}
+              spiderfyOnMaxZoom
+              showCoverageOnHover={false}
+              iconCreateFunction={createClusterIcon}
+            >
+              {plots.map((plot) => {
+                const icon = createScoreIcon(plot.total_score);
+                return (
+                  <Marker
+                    key={plot._id}
+                    position={[plot.lat, plot.lon]}
+                    icon={icon}
+                    alt={plot._id}
+                  >
+                    <Popup>
+                      <div style={{ fontFamily: 'var(--font-body)', minWidth: '200px' }}>
+                        <p
+                          style={{
+                            fontFamily: 'var(--font-body)',
+                            fontWeight: 600,
+                            fontSize: '0.875rem',
+                            marginBottom: '4px',
+                            color: '#1a1a1a',
+                          }}
+                        >
+                          {plot.title}
+                        </p>
+                        <p style={{ fontSize: '0.75rem', color: '#666', marginBottom: '6px' }}>
+                          {plot.location}
+                        </p>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                          <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, color: '#b8863e' }}>
+                            {formatPrice(plot.price)}
                           </span>
+                          {plot.area_sotki && (
+                            <span style={{ fontSize: '0.75rem', color: '#888' }}>
+                              {plot.area_sotki} сот.
+                            </span>
+                          )}
+                        </div>
+                        <div
+                          style={{
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                          }}
+                        >
+                          <span
+                            style={{
+                              fontFamily: 'var(--font-mono)',
+                              fontSize: '0.7rem',
+                              padding: '2px 8px',
+                              borderRadius: '6px',
+                              background: scoreHexColor(plot.total_score) + '22',
+                              color: scoreHexColor(plot.total_score),
+                              fontWeight: 600,
+                            }}
+                          >
+                            score {(plot.total_score * 100).toFixed(0)}
+                          </span>
+                          <a
+                            href={`/plots/${plot._id}`}
+                            style={{
+                              fontSize: '0.75rem',
+                              color: '#b8863e',
+                              textDecoration: 'none',
+                              fontWeight: 500,
+                            }}
+                          >
+                            Подробнее →
+                          </a>
+                        </div>
+                        {plot.features_text && (
+                          <p style={{ fontSize: '0.65rem', color: '#999', marginTop: '4px' }}>
+                            {plot.features_text}
+                          </p>
                         )}
                       </div>
-                      <div
-                        style={{
-                          display: 'flex',
-                          justifyContent: 'space-between',
-                          alignItems: 'center',
-                        }}
-                      >
-                        <span
-                          style={{
-                            fontFamily: 'var(--font-mono)',
-                            fontSize: '0.7rem',
-                            padding: '2px 8px',
-                            borderRadius: '6px',
-                            background: color + '22',
-                            color,
-                            fontWeight: 600,
-                          }}
-                        >
-                          score {(plot.total_score * 100).toFixed(0)}
-                        </span>
-                        <a
-                          href={`/plots/${plot._id}`}
-                          style={{
-                            fontSize: '0.75rem',
-                            color: '#b8863e',
-                            textDecoration: 'none',
-                            fontWeight: 500,
-                          }}
-                        >
-                          Подробнее →
-                        </a>
-                      </div>
-                      {plot.features_text && (
-                        <p style={{ fontSize: '0.65rem', color: '#999', marginTop: '4px' }}>
-                          {plot.features_text}
-                        </p>
-                      )}
-                    </div>
-                  </Popup>
-                </CircleMarker>
-              );
-            })}
+                    </Popup>
+                  </Marker>
+                );
+              })}
+            </MarkerClusterGroup>
           </MapContainer>
         </div>
       )}

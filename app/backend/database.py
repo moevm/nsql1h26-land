@@ -8,7 +8,7 @@ from pymongo import GEOSPHERE
 from config import (
     MONGODB_URI, MONGODB_DB,
     COL_PLOTS, INFRA_COLLECTIONS, COL_NEGATIVE,
-    EMBEDDING_DIM,
+    EMBEDDING_DIM, COL_USERS,
 )
 
 logger = logging.getLogger(__name__)
@@ -58,6 +58,11 @@ async def ensure_indexes():
     await plots.create_index("total_score")
     logger.info("Indexes on '%s' ensured", COL_PLOTS)
 
+    # users
+    users = db[COL_USERS]
+    await users.create_index("username", unique=True)
+    logger.info("Indexes on '%s' ensured", COL_USERS)
+
     # infrastructure collections
     for col_name in INFRA_COLLECTIONS + [COL_NEGATIVE]:
         col = db[col_name]
@@ -82,3 +87,28 @@ async def seed_mock_data():
             logger.info("Seeded %d docs into '%s'", len(records), col_name)
         else:
             logger.info("'%s' already has %d docs, skipping seed", col_name, count)
+
+
+async def seed_admin():
+    """
+    Создаёт администратора по умолчанию если нет ни одного пользователя.
+    Login: admin / admin
+    """
+    assert db is not None
+    from auth import hash_password
+    from datetime import datetime, timezone
+
+    users = db[COL_USERS]
+    count = await users.count_documents({})
+    if count == 0:
+        pw_hash, salt = hash_password("admin")
+        await users.insert_one({
+            "username": "admin",
+            "password_hash": pw_hash,
+            "salt": salt,
+            "role": "admin",
+            "created_at": datetime.now(timezone.utc),
+        })
+        logger.info("Seeded default admin user (admin/admin)")
+    else:
+        logger.info("Users collection has %d docs, skipping admin seed", count)

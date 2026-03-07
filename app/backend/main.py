@@ -8,10 +8,11 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from database import connect, disconnect, ensure_indexes, seed_mock_data
+from database import connect, disconnect, ensure_indexes, seed_mock_data, seed_admin
 from routes.plots import router as plots_router
 from routes.infrastructure import router as infra_router
 from routes.data_io import router as data_io_router
+from routes.auth import router as auth_router
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
@@ -24,6 +25,7 @@ async def lifespan(app: FastAPI):
     await connect()
     await ensure_indexes()
     await seed_mock_data()
+    await seed_admin()
     logger.info("Ready.")
     yield
     logger.info("Shutting down...")
@@ -45,6 +47,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.include_router(auth_router)
 app.include_router(plots_router)
 app.include_router(infra_router)
 app.include_router(data_io_router)

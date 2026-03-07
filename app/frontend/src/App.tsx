@@ -1,21 +1,27 @@
+import { lazy, Suspense } from 'react';
 import { Routes, Route, Link, useLocation } from 'react-router-dom';
-import { LayoutGrid, Map, PlusSquare, Database } from 'lucide-react';
-import PlotsList from './pages/PlotsList';
-import PlotDetail from './pages/PlotDetail';
-import AddPlot from './pages/AddPlot';
-import SearchResults from './pages/SearchResults';
-import AdminPanel from './pages/AdminPanel';
-import PlotsMap from './pages/PlotsMap';
+import { LayoutGrid, Map, PlusSquare, Database, LogIn, User, LogOut, Shield } from 'lucide-react';
+import { useAuth } from './contexts/AuthContext';
 
-const navLinks = [
-  { to: '/', label: 'Каталог', Icon: LayoutGrid },
-  { to: '/map', label: 'Карта', Icon: Map },
-  { to: '/add', label: 'Новый участок', Icon: PlusSquare },
-  { to: '/admin', label: 'Панель данных', Icon: Database },
-];
+const PlotsList = lazy(() => import('./pages/PlotsList'));
+const PlotDetail = lazy(() => import('./pages/PlotDetail'));
+const AddPlot = lazy(() => import('./pages/AddPlot'));
+const EditPlot = lazy(() => import('./pages/EditPlot'));
+const SearchResults = lazy(() => import('./pages/SearchResults'));
+const AdminPanel = lazy(() => import('./pages/AdminPanel'));
+const PlotsMap = lazy(() => import('./pages/PlotsMap'));
+const LoginPage = lazy(() => import('./pages/LoginPage'));
 
 export default function App() {
   const location = useLocation();
+  const { user, logout, isAdmin } = useAuth();
+
+  const navLinks = [
+    { to: '/', label: 'Каталог', Icon: LayoutGrid, show: true },
+    { to: '/map', label: 'Карта', Icon: Map, show: true },
+    { to: '/add', label: 'Новый участок', Icon: PlusSquare, show: !!user },
+    { to: '/admin', label: 'Панель данных', Icon: Database, show: isAdmin },
+  ];
 
   return (
     <div className="min-h-screen flex flex-col" style={{ background: 'var(--c-bg)' }}>
@@ -57,7 +63,7 @@ export default function App() {
             </Link>
 
             <nav className="flex items-center gap-1">
-              {navLinks.map((l) => {
+              {navLinks.filter(l => l.show).map((l) => {
                 const active =
                   l.to === '/'
                     ? location.pathname === '/'
@@ -97,20 +103,62 @@ export default function App() {
                   </Link>
                 );
               })}
+
+              {/* User menu */}
+              {user ? (
+                <div className="flex items-center gap-2 ml-3 pl-3" style={{ borderLeft: '1px solid var(--c-border)' }}>
+                  <span className="flex items-center gap-1.5 text-xs px-2 py-1 rounded-lg"
+                    style={{
+                      background: isAdmin ? 'var(--c-accent-dim)' : 'var(--c-blue-dim)',
+                      color: isAdmin ? 'var(--c-accent)' : 'var(--c-blue)',
+                      fontFamily: 'var(--font-mono)',
+                    }}>
+                    {isAdmin ? <Shield size={12} /> : <User size={12} />}
+                    {user.username}
+                  </span>
+                  <button
+                    onClick={logout}
+                    className="p-1.5 rounded-lg transition-colors"
+                    style={{ color: 'var(--c-text-dim)' }}
+                    onMouseEnter={(e) => e.currentTarget.style.color = 'var(--c-red)'}
+                    onMouseLeave={(e) => e.currentTarget.style.color = 'var(--c-text-dim)'}
+                    title="Выйти"
+                  >
+                    <LogOut size={15} />
+                  </button>
+                </div>
+              ) : (
+                <Link
+                  to="/login"
+                  className="flex items-center gap-1.5 ml-3 pl-3 text-sm transition-colors"
+                  style={{
+                    borderLeft: '1px solid var(--c-border)',
+                    color: 'var(--c-text-muted)',
+                  }}
+                  onMouseEnter={(e) => e.currentTarget.style.color = 'var(--c-accent)'}
+                  onMouseLeave={(e) => e.currentTarget.style.color = 'var(--c-text-muted)'}
+                >
+                  <LogIn size={15} /> Войти
+                </Link>
+              )}
             </nav>
           </div>
         </div>
       </header>
 
       <main className="flex-1 max-w-7xl mx-auto px-5 sm:px-8 lg:px-10 py-8 w-full">
+        <Suspense fallback={<div className="text-center py-20" style={{ color: 'var(--c-text-muted)' }}>Загрузка…</div>}>
         <Routes>
           <Route path="/" element={<PlotsList />} />
           <Route path="/map" element={<PlotsMap />} />
           <Route path="/plots/:id" element={<PlotDetail />} />
+          <Route path="/plots/:id/edit" element={<EditPlot />} />
           <Route path="/add" element={<AddPlot />} />
           <Route path="/search" element={<SearchResults />} />
           <Route path="/admin" element={<AdminPanel />} />
+          <Route path="/login" element={<LoginPage />} />
         </Routes>
+        </Suspense>
       </main>
 
       <footer

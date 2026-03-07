@@ -97,6 +97,12 @@ JINA_SCORE_THRESHOLD = 0.1        # порог Jina score — ниже отсе�
 ALPHA = 0.6
 BETA = 0.4
 
+# --- Auth / JWT ---
+JWT_SECRET = os.getenv("JWT_SECRET", "land-plots-dev-secret-key-change-in-prod")
+JWT_ALGORITHM = "HS256"
+JWT_EXPIRE_HOURS = 72
+COL_USERS = "users"
+
 # --- Pagination ---
 DEFAULT_PAGE_SIZE = 20
 MAX_PAGE_SIZE = 100

@@ -2,37 +2,25 @@
 Маршруты импорта/экспорта данных.
 """
 
-import re
 import math
 from datetime import datetime, timezone
 
-from bson import ObjectId
-from fastapi import APIRouter, HTTPException, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import JSONResponse
 
 from database import get_db
+from auth import require_admin
 from config import (
     COL_PLOTS, INFRA_COLLECTIONS, COL_NEGATIVE,
 )
 from services.feature_service import extract_features_batch
 from services.geo_service import compute_distances, compute_total_score
 from config import EMBEDDING_DIM, FEATURE_DEFINITIONS
+from utils import serialize_doc_deep as _serialize_doc, parse_area
 
 router = APIRouter(prefix="/api/data", tags=["data-io"])
 
 ALL_COLLECTIONS = [COL_PLOTS] + INFRA_COLLECTIONS + [COL_NEGATIVE]
-
-
-def _serialize_doc(doc: dict) -> dict:
-    """Конвертирует MongoDB-документ в JSON-сериализуемый dict."""
-    for key, value in list(doc.items()):
-        if isinstance(value, ObjectId):
-            doc[key] = str(value)
-        elif isinstance(value, datetime):
-            doc[key] = value.isoformat()
-        elif isinstance(value, dict):
-            doc[key] = _serialize_doc(value)
-    return doc
 
 
 # ---------- Экспорт ----------
@@ -67,7 +55,7 @@ async def export_collection(collection: str):
 # ---------- Импорт ----------
 
 @router.post("/import/plots")
-async def import_plots(records: list[dict]):
+async def import_plots(records: list[dict], _: dict = Depends(require_admin)):
     """
     Импорт объявлений.
     Если в записи уже есть features/embedding — используем их.
@@ -147,11 +135,7 @@ async def import_plots(records: list[dict]):
 
         area = rec.get("area_sotki")
         if not area:
-            for text in [rec.get("title", ""), rec.get("description", "")]:
-                m = re.search(r"(\d+[.,]?\d*)\s*сот", text, re.IGNORECASE)
-                if m:
-                    area = float(m.group(1).replace(",", "."))
-                    break
+            area = parse_area(rec.get("title", ""), rec.get("description", ""))
 
         price = rec.get("price", 0)
         price_per_sotka = rec.get("price_per_sotka")
@@ -210,7 +194,7 @@ async def import_plots(records: list[dict]):
 
 
 @router.post("/import/infra/{collection}")
-async def import_infra(collection: str, records: list[dict]):
+async def import_infra(collection: str, records: list[dict], _: dict = Depends(require_admin)):
     """
     Импорт инфраструктурных объектов.
     Полностью заменяет коллекцию.
@@ -242,7 +226,7 @@ async def import_infra(collection: str, records: list[dict]):
 
 
 @router.delete("/clear/{collection}")
-async def clear_collection(collection: str):
+async def clear_collection(collection: str, _: dict = Depends(require_admin)):
     """Очистить коллекцию."""
     if collection not in ALL_COLLECTIONS:
         raise HTTPException(400, f"Unknown collection: {collection}")

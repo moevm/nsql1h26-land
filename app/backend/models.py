@@ -26,6 +26,23 @@ class PlotCreate(BaseModel):
     was_lowered: bool = False
 
 
+class PlotUpdate(BaseModel):
+    """Данные для обновления объявления (все поля опциональны)."""
+    title: Optional[str] = None
+    description: Optional[str] = None
+    price: Optional[float] = None
+    area_sotki: Optional[float] = None
+    location: Optional[str] = None
+    address: Optional[str] = None
+    geo_ref: Optional[str] = None
+    lat: Optional[float] = None
+    lon: Optional[float] = None
+    url: Optional[str] = None
+    thumbnail: Optional[str] = None
+    images_count: Optional[int] = None
+    was_lowered: Optional[bool] = None
+
+
 class PlotDistance(BaseModel):
     name: str = ""
     km: float = 0
@@ -68,6 +85,8 @@ class PlotOut(BaseModel):
     negative_score: float = 0
     total_score: float = 0
     created_at: Optional[datetime] = None
+    owner_id: Optional[str] = None
+    owner_name: Optional[str] = None
 
     class Config:
         populate_by_name = True

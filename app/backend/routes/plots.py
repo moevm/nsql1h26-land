@@ -3,40 +3,44 @@ CRUD-маршруты для объявлений (plots) + поиск.
 """
 
 import math
-import re
 from datetime import datetime, timezone
 from typing import Optional
 
 from bson import ObjectId
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 
 from database import get_db
 from config import COL_PLOTS, DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE
-from models import PlotCreate, PlotOut, PlotListOut, SearchQuery, SearchResultItem, SearchResultOut
+from models import PlotCreate, PlotUpdate, PlotOut, PlotListOut, SearchQuery, SearchResultItem, SearchResultOut
 from services.feature_service import extract_features
 from services.geo_service import compute_distances, compute_total_score
 from services.search_service import search_plots
+from auth import get_current_user, get_optional_user
+from utils import serialize_doc as _serialize, parse_area as _parse_area
 
 router = APIRouter(prefix="/api/plots", tags=["plots"])
 
-
-def _serialize(doc: dict) -> dict:
-    """Конвертирует MongoDB-документ в сериализуемый dict."""
-    doc["_id"] = str(doc["_id"])
-    doc.pop("embedding", None)
-    return doc
+_ERR_INVALID_ID = "Invalid ID"
+_ERR_NOT_FOUND = "Plot not found"
 
 
-def _parse_area(title: str, description: str) -> Optional[float]:
-    """Извлекает площадь в сотках из заголовка/описания."""
-    for text in [title, description]:
-        m = re.search(r"(\d+[.,]?\d*)\s*сот", text, re.IGNORECASE)
-        if m:
-            return float(m.group(1).replace(",", "."))
-        m = re.search(r"(\d+[.,]?\d*)\s*га", text, re.IGNORECASE)
-        if m:
-            return float(m.group(1).replace(",", ".")) * 100
-    return None
+def _get_oid(plot_id: str) -> ObjectId:
+    """Парсит строку в ObjectId, бросает 404 если невалидно."""
+    try:
+        return ObjectId(plot_id)
+    except Exception:
+        raise HTTPException(404, _ERR_INVALID_ID)
+
+
+def _build_range_filter(query_filter: dict, field: str, min_val, max_val):
+    """Добавляет gte/lte фильтр если значения указаны."""
+    f: dict = {}
+    if min_val is not None:
+        f["$gte"] = min_val
+    if max_val is not None:
+        f["$lte"] = max_val
+    if f:
+        query_filter[field] = f
 
 
 @router.get("", response_model=PlotListOut)
@@ -62,38 +66,12 @@ async def list_plots(
 
     # Build filter
     query_filter: dict = {}
-    if min_price is not None or max_price is not None:
-        price_f: dict = {}
-        if min_price is not None:
-            price_f["$gte"] = min_price
-        if max_price is not None:
-            price_f["$lte"] = max_price
-        query_filter["price"] = price_f
-
-    if min_area is not None or max_area is not None:
-        area_f: dict = {}
-        if min_area is not None:
-            area_f["$gte"] = min_area
-        if max_area is not None:
-            area_f["$lte"] = max_area
-        query_filter["area_sotki"] = area_f
-
-    if min_price_per_sotka is not None or max_price_per_sotka is not None:
-        pps_f: dict = {}
-        if min_price_per_sotka is not None:
-            pps_f["$gte"] = min_price_per_sotka
-        if max_price_per_sotka is not None:
-            pps_f["$lte"] = max_price_per_sotka
-        query_filter["price_per_sotka"] = pps_f
-
-    if min_score is not None:
-        query_filter["total_score"] = {"$gte": min_score}
-
-    if min_infra is not None:
-        query_filter["infra_score"] = {"$gte": min_infra}
-
-    if min_feature is not None:
-        query_filter["feature_score"] = {"$gte": min_feature}
+    _build_range_filter(query_filter, "price", min_price, max_price)
+    _build_range_filter(query_filter, "area_sotki", min_area, max_area)
+    _build_range_filter(query_filter, "price_per_sotka", min_price_per_sotka, max_price_per_sotka)
+    _build_range_filter(query_filter, "total_score", min_score, None)
+    _build_range_filter(query_filter, "infra_score", min_infra, None)
+    _build_range_filter(query_filter, "feature_score", min_feature, None)
 
     if location:
         query_filter["location"] = {"$regex": location, "$options": "i"}
@@ -193,20 +171,17 @@ async def search(
 async def get_plot(plot_id: str):
     """Получить одно объявление с аналитикой."""
     db = get_db()
-    try:
-        oid = ObjectId(plot_id)
-    except Exception:
-        raise HTTPException(404, "Invalid ID")
+    oid = _get_oid(plot_id)
 
     doc = await db[COL_PLOTS].find_one({"_id": oid}, {"embedding": 0})
     if not doc:
-        raise HTTPException(404, "Plot not found")
+        raise HTTPException(404, _ERR_NOT_FOUND)
 
     return PlotOut(**_serialize(doc))
 
 
 @router.post("", response_model=PlotOut, status_code=201)
-async def create_plot(data: PlotCreate):
+async def create_plot(data: PlotCreate, user: dict | None = Depends(get_optional_user)):
     """
     Добавить объявление.
     Автоматически рассчитывает текстовые фичи, эмбединги и расстояния.
@@ -258,6 +233,8 @@ async def create_plot(data: PlotCreate):
         "negative_score": geo_data["negative_score"],
         "total_score": total_score,
         "created_at": datetime.now(timezone.utc),
+        "owner_id": user["_id"] if user else None,
+        "owner_name": user["username"] if user else None,
     }
 
     result = await db[COL_PLOTS].insert_one(doc)
@@ -268,14 +245,91 @@ async def create_plot(data: PlotCreate):
 
 
 @router.delete("/{plot_id}", status_code=204)
-async def delete_plot(plot_id: str):
-    """Удалить объявление."""
+async def delete_plot(plot_id: str, user: dict = Depends(get_current_user)):
+    """Удалить объявление. Админ — любое, пользователь — только своё."""
     db = get_db()
-    try:
-        oid = ObjectId(plot_id)
-    except Exception:
-        raise HTTPException(404, "Invalid ID")
+    oid = _get_oid(plot_id)
 
-    result = await db[COL_PLOTS].delete_one({"_id": oid})
-    if result.deleted_count == 0:
-        raise HTTPException(404, "Plot not found")
+    doc = await db[COL_PLOTS].find_one({"_id": oid}, {"owner_id": 1})
+    if not doc:
+        raise HTTPException(404, _ERR_NOT_FOUND)
+
+    if user["role"] != "admin" and doc.get("owner_id") != user["_id"]:
+        raise HTTPException(403, "You can only delete your own plots")
+
+    await db[COL_PLOTS].delete_one({"_id": oid})
+
+
+@router.put("/{plot_id}", response_model=PlotOut)
+async def update_plot(plot_id: str, data: PlotUpdate, user: dict = Depends(get_current_user)):
+    """
+    Обновить объявление. Админ — любое, пользователь — только своё.
+    Пересчитывает фичи и расстояния при изменении описания/координат.
+    """
+    db = get_db()
+    oid = _get_oid(plot_id)
+
+    existing = await db[COL_PLOTS].find_one({"_id": oid})
+    if not existing:
+        raise HTTPException(404, _ERR_NOT_FOUND)
+
+    if user["role"] != "admin" and existing.get("owner_id") != user["_id"]:
+        raise HTTPException(403, "You can only edit your own plots")
+
+    # Merge updated fields
+    updates = data.model_dump(exclude_none=True)
+
+    if not updates:
+        raise HTTPException(400, "No fields to update")
+
+    # Determine if we need to recalculate
+    title = updates.get("title", existing.get("title", ""))
+    description = updates.get("description", existing.get("description", ""))
+    geo_ref = updates.get("geo_ref", existing.get("geo_ref", ""))
+    lat = updates.get("lat", existing.get("lat", 0))
+    lon = updates.get("lon", existing.get("lon", 0))
+    price = updates.get("price", existing.get("price", 0))
+    area = updates.get("area_sotki", existing.get("area_sotki"))
+
+    text_changed = "title" in updates or "description" in updates or "geo_ref" in updates
+    geo_changed = "lat" in updates or "lon" in updates
+
+    if text_changed:
+        feat_data = extract_features(title, description, geo_ref)
+        updates["embedding"] = feat_data["embedding"]
+        updates["features"] = feat_data["features"]
+        updates["feature_score"] = feat_data["feature_score"]
+        updates["features_text"] = feat_data["features_text"]
+
+    if geo_changed:
+        updates["geo_location"] = {"type": "Point", "coordinates": [lon, lat]}
+        geo_data = await compute_distances(db, lat, lon)
+        updates["distances"] = geo_data["distances"]
+        updates["infra_score"] = geo_data["infra_score"]
+        updates["negative_score"] = geo_data["negative_score"]
+
+    # Recalculate price_per_sotka
+    if not area:
+        area = _parse_area(title, description)
+    if area:
+        updates["area_sotki"] = area
+    price_per_sotka = None
+    if price and area and area > 0:
+        price_per_sotka = round(price / area, 2)
+    updates["price_per_sotka"] = price_per_sotka
+
+    # Recalculate total_score
+    infra_score = updates.get("infra_score", existing.get("infra_score", 0))
+    negative_score = updates.get("negative_score", existing.get("negative_score", 0))
+    feature_score = updates.get("feature_score", existing.get("feature_score", 0))
+    updates["total_score"] = compute_total_score(
+        infra_score=infra_score,
+        negative_score=negative_score,
+        feature_score=feature_score,
+        price_per_sotka=price_per_sotka,
+    )
+
+    await db[COL_PLOTS].update_one({"_id": oid}, {"$set": updates})
+
+    doc = await db[COL_PLOTS].find_one({"_id": oid}, {"embedding": 0})
+    return PlotOut(**_serialize(doc))

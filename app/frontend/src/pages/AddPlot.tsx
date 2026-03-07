@@ -5,6 +5,7 @@ import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { createPlot } from '../api';
 import { SPB_CENTER, getErrorMessage } from '../utils';
+import { invalidateCache } from '../cache';
 
 // Fix default marker icon
 delete (L.Icon.Default.prototype as any)._getIconUrl;
@@ -107,6 +108,8 @@ export default function AddPlot() {
         thumbnail: form.thumbnail,
       };
       const created = await createPlot(data);
+      invalidateCache('plots');
+      invalidateCache('map-plots');
       navigate(`/plots/${created._id}`);
     } catch (e) {
       setError(getErrorMessage(e));

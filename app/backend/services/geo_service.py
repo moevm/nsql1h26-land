@@ -4,6 +4,7 @@
 Использует 2dsphere индексы на коллекциях инфраструктуры.
 """
 
+import asyncio
 import logging
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from config import (
@@ -80,12 +81,18 @@ async def compute_distances(db: AsyncIOMotorDatabase, lat: float, lon: float) ->
     """
     distances = {}
 
-    # инфраструктура
+    # Параллельный запрос ко всем инфра-коллекциям + негативным объектам
+    tasks = []
+    keys = []
     for col_name, dist_key in _INFRA_MAP.items():
-        distances[dist_key] = await _nearest(db, col_name, lon, lat)
+        tasks.append(_nearest(db, col_name, lon, lat))
+        keys.append(dist_key)
+    tasks.append(_nearest(db, COL_NEGATIVE, lon, lat))
+    keys.append("nearest_negative")
 
-    # негативные объекты
-    distances["nearest_negative"] = await _nearest(db, COL_NEGATIVE, lon, lat)
+    results = await asyncio.gather(*tasks)
+    for key, result in zip(keys, results):
+        distances[key] = result
 
     # infra_score
     infra_score = 0.0

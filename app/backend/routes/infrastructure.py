@@ -3,11 +3,12 @@
 """
 
 from bson import ObjectId
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 
 from database import get_db
 from config import INFRA_COLLECTIONS, COL_NEGATIVE
 from models import InfraObjectCreate, InfraObjectOut
+from auth import require_admin
 
 router = APIRouter(prefix="/api/infra", tags=["infrastructure"])
 
@@ -40,7 +41,7 @@ async def list_objects(collection: str):
 
 
 @router.post("/{collection}", response_model=InfraObjectOut, status_code=201)
-async def add_object(collection: str, data: InfraObjectCreate):
+async def add_object(collection: str, data: InfraObjectCreate, _: dict = Depends(require_admin)):
     """Добавить объект инфраструктуры."""
     if collection not in ALL_COLLECTIONS:
         raise HTTPException(400, f"Unknown collection: {collection}")
@@ -60,7 +61,7 @@ async def add_object(collection: str, data: InfraObjectCreate):
 
 
 @router.delete("/{collection}/{object_id}", status_code=204)
-async def delete_object(collection: str, object_id: str):
+async def delete_object(collection: str, object_id: str, _: dict = Depends(require_admin)):
     """Удалить объект инфраструктуры."""
     if collection not in ALL_COLLECTIONS:
         raise HTTPException(400, f"Unknown collection: {collection}")
@@ -75,7 +76,7 @@ async def delete_object(collection: str, object_id: str):
 
 
 @router.put("/{collection}", status_code=200)
-async def replace_collection(collection: str, data: list[InfraObjectCreate]):
+async def replace_collection(collection: str, data: list[InfraObjectCreate], _: dict = Depends(require_admin)):
     """
     Полностью перезаписать коллекцию инфраструктуры.
     Удаляет все текущие документы и вставляет новые.
