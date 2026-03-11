@@ -67,11 +67,6 @@ def compute_embedding(text: str) -> list[float]:
     return emb[0].tolist()
 
 
-def compute_query_embedding(query: str) -> list[float]:
-    """Вычисляет эмбеддинг поискового запроса."""
-    return compute_embedding(query.lower())
-
-
 def _empty_result() -> dict:
     feature_names = list(FEATURE_DEFINITIONS.keys())
     return {

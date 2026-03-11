@@ -5,7 +5,7 @@
 from bson import ObjectId
 from fastapi import APIRouter, Depends, HTTPException
 
-from database import get_db
+from database import get_infra_repo
 from config import INFRA_COLLECTIONS, COL_NEGATIVE
 from models import InfraObjectCreate, InfraObjectOut
 from auth import require_admin
@@ -34,9 +34,8 @@ async def list_objects(collection: str):
     """Список объектов в коллекции."""
     if collection not in ALL_COLLECTIONS:
         raise HTTPException(400, f"Unknown collection: {collection}")
-    db = get_db()
-    cursor = db[collection].find({})
-    docs = await cursor.to_list(length=1000)
+    repo = get_infra_repo()
+    docs = await repo.find_all(collection)
     return [InfraObjectOut(**_serialize(d)) for d in docs]
 
 
@@ -45,7 +44,7 @@ async def add_object(collection: str, data: InfraObjectCreate, _: dict = Depends
     """Добавить объект инфраструктуры."""
     if collection not in ALL_COLLECTIONS:
         raise HTTPException(400, f"Unknown collection: {collection}")
-    db = get_db()
+    repo = get_infra_repo()
     doc = {
         "name": data.name,
         "location": {"type": "Point", "coordinates": [data.lon, data.lat]},
@@ -53,8 +52,8 @@ async def add_object(collection: str, data: InfraObjectCreate, _: dict = Depends
     if data.type and collection == COL_NEGATIVE:
         doc["type"] = data.type
 
-    result = await db[collection].insert_one(doc)
-    doc["_id"] = str(result.inserted_id)
+    inserted_id = await repo.insert_one(collection, doc)
+    doc["_id"] = str(inserted_id)
     doc["lat"] = data.lat
     doc["lon"] = data.lon
     return InfraObjectOut(**doc)
@@ -65,13 +64,13 @@ async def delete_object(collection: str, object_id: str, _: dict = Depends(requi
     """Удалить объект инфраструктуры."""
     if collection not in ALL_COLLECTIONS:
         raise HTTPException(400, f"Unknown collection: {collection}")
-    db = get_db()
+    repo = get_infra_repo()
     try:
         oid = ObjectId(object_id)
     except Exception:
         raise HTTPException(404, "Invalid ID")
-    result = await db[collection].delete_one({"_id": oid})
-    if result.deleted_count == 0:
+    deleted = await repo.delete_one(collection, oid)
+    if not deleted:
         raise HTTPException(404, "Object not found")
 
 
@@ -83,20 +82,17 @@ async def replace_collection(collection: str, data: list[InfraObjectCreate], _: 
     """
     if collection not in ALL_COLLECTIONS:
         raise HTTPException(400, f"Unknown collection: {collection}")
-    db = get_db()
+    repo = get_infra_repo()
 
-    await db[collection].delete_many({})
+    docs = []
+    for item in data:
+        doc = {
+            "name": item.name,
+            "location": {"type": "Point", "coordinates": [item.lon, item.lat]},
+        }
+        if item.type and collection == COL_NEGATIVE:
+            doc["type"] = item.type
+        docs.append(doc)
 
-    if data:
-        docs = []
-        for item in data:
-            doc = {
-                "name": item.name,
-                "location": {"type": "Point", "coordinates": [item.lon, item.lat]},
-            }
-            if item.type and collection == COL_NEGATIVE:
-                doc["type"] = item.type
-            docs.append(doc)
-        await db[collection].insert_many(docs)
-
-    return {"replaced": len(data), "collection": collection}
+    count = await repo.replace_all(collection, docs)
+    return {"replaced": count, "collection": collection}

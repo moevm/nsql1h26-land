@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, memo } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { Search, ArrowDown, ArrowUp, SlidersHorizontal } from 'lucide-react';
+import { ArrowDown, ArrowUp, SlidersHorizontal } from 'lucide-react';
 import { fetchPlots, type Plot, type PlotsListResponse, type PlotFilters } from '../api';
 import { formatPrice, getErrorMessage } from '../utils';
 import ScoreGauge from '../components/ScoreGauge';
@@ -259,17 +259,12 @@ export default function PlotsList() {
       <form onSubmit={handleSearch} className="mb-6">
         <div className="flex gap-3">
           <div className="flex-1 relative">
-            <Search
-              size={16}
-              className="absolute left-4 top-1/2 -translate-y-1/2"
-              style={{ color: 'var(--c-text-dim)' }}
-            />
             <input
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Поиск: тихий участок у воды, ИЖС с коммуникациями..."
-              className="input-field pl-10"
+              className="input-field"
             />
           </div>
           <button type="submit" className="btn-primary whitespace-nowrap">

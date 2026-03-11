@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import JSONResponse
 
-from database import get_db
+from database import get_db, get_plot_repo, get_infra_repo
 from auth import require_admin
 from config import (
     COL_PLOTS, INFRA_COLLECTIONS, COL_NEGATIVE,
@@ -28,11 +28,15 @@ ALL_COLLECTIONS = [COL_PLOTS] + INFRA_COLLECTIONS + [COL_NEGATIVE]
 @router.get("/export")
 async def export_all():
     """Экспорт ВСЕХ коллекций в JSON."""
-    db = get_db()
+    plot_repo = get_plot_repo()
+    infra_repo = get_infra_repo()
     result = {}
-    for col_name in ALL_COLLECTIONS:
-        cursor = db[col_name].find({})
-        docs = await cursor.to_list(length=None)
+    # plots
+    docs = await plot_repo.find_all()
+    result[COL_PLOTS] = [_serialize_doc(d) for d in docs]
+    # infra collections
+    for col_name in INFRA_COLLECTIONS + [COL_NEGATIVE]:
+        docs = await infra_repo.find_all(col_name)
         result[col_name] = [_serialize_doc(d) for d in docs]
     return JSONResponse(content=result)
 
@@ -42,9 +46,12 @@ async def export_collection(collection: str):
     """Экспорт одной коллекции в JSON."""
     if collection not in ALL_COLLECTIONS:
         raise HTTPException(400, f"Unknown collection: {collection}")
-    db = get_db()
-    cursor = db[collection].find({})
-    docs = await cursor.to_list(length=None)
+    if collection == COL_PLOTS:
+        repo = get_plot_repo()
+        docs = await repo.find_all()
+    else:
+        repo = get_infra_repo()
+        docs = await repo.find_all(collection)
     return JSONResponse(content={
         "collection": collection,
         "count": len(docs),
@@ -62,6 +69,7 @@ async def import_plots(records: list[dict], _: dict = Depends(require_admin)):
     Если нет — рассчитываем автоматически.
     """
     db = get_db()
+    plot_repo = get_plot_repo()
 
     if not records:
         return {"inserted": 0}
@@ -181,13 +189,9 @@ async def import_plots(records: list[dict], _: dict = Depends(require_admin)):
 
         # upsert по avito_id если есть
         if doc.get("avito_id"):
-            await db[COL_PLOTS].update_one(
-                {"avito_id": doc["avito_id"]},
-                {"$set": doc},
-                upsert=True,
-            )
+            await plot_repo.upsert_by_avito_id(doc["avito_id"], doc)
         else:
-            await db[COL_PLOTS].insert_one(doc)
+            await plot_repo.insert_one(doc)
         inserted += 1
 
     return {"inserted": inserted}
@@ -203,11 +207,7 @@ async def import_infra(collection: str, records: list[dict], _: dict = Depends(r
     if collection not in all_cols:
         raise HTTPException(400, f"Unknown collection: {collection}")
 
-    db = get_db()
-    await db[collection].delete_many({})
-
-    if not records:
-        return {"inserted": 0, "collection": collection}
+    infra_repo = get_infra_repo()
 
     docs = []
     for rec in records:
@@ -221,8 +221,8 @@ async def import_infra(collection: str, records: list[dict], _: dict = Depends(r
             doc["type"] = rec["type"]
         docs.append(doc)
 
-    await db[collection].insert_many(docs)
-    return {"inserted": len(docs), "collection": collection}
+    count = await infra_repo.replace_all(collection, docs)
+    return {"inserted": count, "collection": collection}
 
 
 @router.delete("/clear/{collection}")
@@ -230,17 +230,22 @@ async def clear_collection(collection: str, _: dict = Depends(require_admin)):
     """Очистить коллекцию."""
     if collection not in ALL_COLLECTIONS:
         raise HTTPException(400, f"Unknown collection: {collection}")
-    db = get_db()
-    result = await db[collection].delete_many({})
-    return {"deleted": result.deleted_count, "collection": collection}
+    if collection == COL_PLOTS:
+        repo = get_plot_repo()
+        deleted = await repo.delete_all()
+    else:
+        repo = get_infra_repo()
+        deleted = await repo.delete_all(collection)
+    return {"deleted": deleted, "collection": collection}
 
 
 @router.get("/stats")
 async def get_stats():
     """Статистика по всем коллекциям."""
-    db = get_db()
+    plot_repo = get_plot_repo()
+    infra_repo = get_infra_repo()
     stats = {}
-    for col_name in ALL_COLLECTIONS:
-        count = await db[col_name].count_documents({})
-        stats[col_name] = count
+    stats[COL_PLOTS] = await plot_repo.count()
+    for col_name in INFRA_COLLECTIONS + [COL_NEGATIVE]:
+        stats[col_name] = await infra_repo.count(col_name)
     return stats

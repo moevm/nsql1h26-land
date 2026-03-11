@@ -8,7 +8,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from database import connect, disconnect, ensure_indexes, seed_mock_data, seed_admin
+from database import connect, disconnect, ensure_indexes, seed_admin
 from routes.plots import router as plots_router
 from routes.infrastructure import router as infra_router
 from routes.data_io import router as data_io_router
@@ -24,7 +24,6 @@ async def lifespan(app: FastAPI):
     logger.info("Starting up...")
     await connect()
     await ensure_indexes()
-    await seed_mock_data()
     await seed_admin()
     logger.info("Ready.")
     yield

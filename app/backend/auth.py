@@ -12,7 +12,7 @@ from bson import ObjectId
 from fastapi import Depends, HTTPException, Request
 
 from config import JWT_SECRET, JWT_ALGORITHM, JWT_EXPIRE_HOURS, COL_USERS
-from database import get_db
+from database import get_db, get_user_repo
 
 logger = logging.getLogger(__name__)
 
@@ -78,9 +78,9 @@ async def get_current_user(request: Request) -> dict:
 
     payload = _decode_token(token)
 
-    db = get_db()
+    repo = get_user_repo()
     try:
-        user = await db[COL_USERS].find_one({"_id": ObjectId(payload["sub"])})
+        user = await repo.find_by_id(ObjectId(payload["sub"]))
     except Exception:
         raise HTTPException(401, "Invalid user ID")
 
@@ -101,8 +101,8 @@ async def get_optional_user(request: Request) -> dict | None:
         return None
     try:
         payload = _decode_token(token)
-        db = get_db()
-        user = await db[COL_USERS].find_one({"_id": ObjectId(payload["sub"])})
+        repo = get_user_repo()
+        user = await repo.find_by_id(ObjectId(payload["sub"]))
         if user:
             return {
                 "_id": str(user["_id"]),

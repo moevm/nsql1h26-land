@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field
 
 from auth import hash_password, verify_password, create_token, get_current_user
 from config import COL_USERS
-from database import get_db
+from database import get_user_repo
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -32,8 +32,8 @@ class AuthResponse(BaseModel):
 @router.post("/register", response_model=AuthResponse)
 async def register(data: RegisterRequest):
     """Регистрация нового пользователя (роль user)."""
-    db = get_db()
-    existing = await db[COL_USERS].find_one({"username": data.username})
+    repo = get_user_repo()
+    existing = await repo.find_by_username(data.username)
     if existing:
         raise HTTPException(409, "Username already exists")
 
@@ -45,8 +45,7 @@ async def register(data: RegisterRequest):
         "role": "user",
         "created_at": datetime.now(timezone.utc),
     }
-    result = await db[COL_USERS].insert_one(doc)
-    user_id = str(result.inserted_id)
+    user_id = str(await repo.insert_one(doc))
     token = create_token(user_id, "user")
     return AuthResponse(
         token=token,
@@ -57,8 +56,8 @@ async def register(data: RegisterRequest):
 @router.post("/login", response_model=AuthResponse)
 async def login(data: LoginRequest):
     """Вход в систему."""
-    db = get_db()
-    user = await db[COL_USERS].find_one({"username": data.username})
+    repo = get_user_repo()
+    user = await repo.find_by_username(data.username)
     if not user:
         raise HTTPException(401, "Invalid credentials")
 

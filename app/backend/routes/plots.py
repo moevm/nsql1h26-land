@@ -9,7 +9,7 @@ from typing import Optional
 from bson import ObjectId
 from fastapi import APIRouter, Depends, HTTPException, Query
 
-from database import get_db
+from database import get_db, get_plot_repo
 from config import COL_PLOTS, DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE
 from models import PlotCreate, PlotUpdate, PlotOut, PlotListOut, SearchQuery, SearchResultItem, SearchResultOut
 from services.feature_service import extract_features
@@ -61,8 +61,7 @@ async def list_plots(
     location: Optional[str] = Query(None),
 ):
     """Список объявлений с пагинацией и фильтрами."""
-    db = get_db()
-    col = db[COL_PLOTS]
+    repo = get_plot_repo()
 
     # Build filter
     query_filter: dict = {}
@@ -76,17 +75,17 @@ async def list_plots(
     if location:
         query_filter["location"] = {"$regex": location, "$options": "i"}
 
-    total = await col.count_documents(query_filter)
+    total = await repo.count(query_filter)
     pages = max(1, math.ceil(total / page_size))
 
     sort_dir = 1 if order == "asc" else -1
-    cursor = (
-        col.find(query_filter, {"embedding": 0})
-        .sort(sort, sort_dir)
-        .skip((page - 1) * page_size)
-        .limit(page_size)
+    docs = await repo.find_page(
+        query_filter=query_filter,
+        sort_field=sort,
+        sort_dir=sort_dir,
+        skip=(page - 1) * page_size,
+        limit=page_size,
     )
-    docs = await cursor.to_list(length=page_size)
     items = [PlotOut(**_serialize(d)) for d in docs]
 
     return PlotListOut(
@@ -104,26 +103,55 @@ async def get_plots_for_map(
     page_size: int = Query(200, ge=1, le=1000),
 ):
     """Эндпоинт для карты: возвращает участки постранично с минимальными полями."""
-    db = get_db()
+    repo = get_plot_repo()
     projection = {
         "title": 1, "price": 1, "area_sotki": 1,
         "lat": 1, "lon": 1, "total_score": 1,
         "location": 1, "features_text": 1,
     }
-    total = await db[COL_PLOTS].count_documents({})
+    total = await repo.count()
     pages = max(1, math.ceil(total / page_size))
-    cursor = (
-        db[COL_PLOTS]
-        .find({}, projection)
-        .skip((page - 1) * page_size)
-        .limit(page_size)
+    docs = await repo.find_page(
+        projection=projection,
+        skip=(page - 1) * page_size,
+        limit=page_size,
     )
-    docs = await cursor.to_list(length=page_size)
     items = []
     for d in docs:
         d["_id"] = str(d["_id"])
         items.append(d)
     return {"items": items, "total": total, "page": page, "page_size": page_size, "pages": pages}
+
+
+@router.get("/my", response_model=PlotListOut)
+async def my_plots(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(DEFAULT_PAGE_SIZE, ge=1, le=MAX_PAGE_SIZE),
+    sort: str = Query("created_at", pattern="^(created_at|price|area_sotki|total_score)$"),
+    order: str = Query("desc", pattern="^(asc|desc)$"),
+    user: dict = Depends(get_current_user),
+):
+    """Объявления текущего пользователя. Админ видит объявления без owner_id."""
+    repo = get_plot_repo()
+
+    if user["role"] == "admin":
+        query_filter = {"$or": [{"owner_id": user["_id"]}, {"owner_id": None}, {"owner_id": {"$exists": False}}]}
+    else:
+        query_filter = {"owner_id": user["_id"]}
+
+    total = await repo.count(query_filter)
+    pages = max(1, math.ceil(total / page_size))
+    sort_dir = 1 if order == "asc" else -1
+
+    docs = await repo.find_page(
+        query_filter=query_filter,
+        sort_field=sort,
+        sort_dir=sort_dir,
+        skip=(page - 1) * page_size,
+        limit=page_size,
+    )
+    items = [PlotOut(**_serialize(d)) for d in docs]
+    return PlotListOut(items=items, total=total, page=page, page_size=page_size, pages=pages)
 
 
 @router.get("/search", response_model=SearchResultOut)
@@ -137,7 +165,7 @@ async def search(
     max_area: Optional[float] = None,
 ):
     """
-    Поиск по объявлениям: vector search + Jina rerank.
+    Поиск по объявлениям: BM25 + feature scoring + Jina rerank.
     Jina считает скоры сразу для ~100 кандидатов, результаты
     кэшируются в памяти. Повторный вызов Jina только при выходе
     за пределы кэша.
@@ -170,10 +198,10 @@ async def search(
 @router.get("/{plot_id}", response_model=PlotOut)
 async def get_plot(plot_id: str):
     """Получить одно объявление с аналитикой."""
-    db = get_db()
+    repo = get_plot_repo()
     oid = _get_oid(plot_id)
 
-    doc = await db[COL_PLOTS].find_one({"_id": oid}, {"embedding": 0})
+    doc = await repo.find_by_id(oid)
     if not doc:
         raise HTTPException(404, _ERR_NOT_FOUND)
 
@@ -187,6 +215,7 @@ async def create_plot(data: PlotCreate, user: dict | None = Depends(get_optional
     Автоматически рассчитывает текстовые фичи, эмбединги и расстояния.
     """
     db = get_db()
+    repo = get_plot_repo()
 
     # Вычисляем площадь если не задана
     area = data.area_sotki or _parse_area(data.title, data.description)
@@ -237,8 +266,8 @@ async def create_plot(data: PlotCreate, user: dict | None = Depends(get_optional
         "owner_name": user["username"] if user else None,
     }
 
-    result = await db[COL_PLOTS].insert_one(doc)
-    doc["_id"] = str(result.inserted_id)
+    result_id = await repo.insert_one(doc)
+    doc["_id"] = str(result_id)
     doc.pop("embedding", None)
 
     return PlotOut(**doc)
@@ -247,17 +276,17 @@ async def create_plot(data: PlotCreate, user: dict | None = Depends(get_optional
 @router.delete("/{plot_id}", status_code=204)
 async def delete_plot(plot_id: str, user: dict = Depends(get_current_user)):
     """Удалить объявление. Админ — любое, пользователь — только своё."""
-    db = get_db()
+    repo = get_plot_repo()
     oid = _get_oid(plot_id)
 
-    doc = await db[COL_PLOTS].find_one({"_id": oid}, {"owner_id": 1})
+    doc = await repo.find_by_id(oid, projection={"owner_id": 1})
     if not doc:
         raise HTTPException(404, _ERR_NOT_FOUND)
 
     if user["role"] != "admin" and doc.get("owner_id") != user["_id"]:
         raise HTTPException(403, "You can only delete your own plots")
 
-    await db[COL_PLOTS].delete_one({"_id": oid})
+    await repo.delete_one(oid)
 
 
 @router.put("/{plot_id}", response_model=PlotOut)
@@ -267,9 +296,10 @@ async def update_plot(plot_id: str, data: PlotUpdate, user: dict = Depends(get_c
     Пересчитывает фичи и расстояния при изменении описания/координат.
     """
     db = get_db()
+    repo = get_plot_repo()
     oid = _get_oid(plot_id)
 
-    existing = await db[COL_PLOTS].find_one({"_id": oid})
+    existing = await repo.find_by_id(oid)
     if not existing:
         raise HTTPException(404, _ERR_NOT_FOUND)
 
@@ -331,7 +361,7 @@ async def update_plot(plot_id: str, data: PlotUpdate, user: dict = Depends(get_c
 
     updates["updated_at"] = datetime.now(timezone.utc)
 
-    await db[COL_PLOTS].update_one({"_id": oid}, {"$set": updates})
+    await repo.update_one(oid, updates)
 
-    doc = await db[COL_PLOTS].find_one({"_id": oid}, {"embedding": 0})
+    doc = await repo.find_by_id(oid)
     return PlotOut(**_serialize(doc))

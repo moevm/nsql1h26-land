@@ -96,7 +96,7 @@ export interface Plot {
   owner_id?: string;
   owner_name?: string;
   // search fields
-  search_score?: number;
+  combined_score?: number;
   jina_score?: number;
 }
 
@@ -198,6 +198,22 @@ export async function searchPlots(
   return fetchJson(`${API_BASE}/plots/search?${params}`, { signal });
 }
 
+export async function fetchMyPlots(
+  page = 1,
+  pageSize = 20,
+  sort = 'created_at',
+  order = 'desc',
+  signal?: AbortSignal,
+): Promise<PlotsListResponse> {
+  const params = new URLSearchParams({
+    page: String(page),
+    page_size: String(pageSize),
+    sort,
+    order,
+  });
+  return fetchJson(`${API_BASE}/plots/my?${params}`, { signal });
+}
+
 /* ---------- Map ---------- */
 
 export interface MapPlot {
@@ -245,6 +261,14 @@ export async function getStats(): Promise<Record<string, number>> {
 
 export async function clearCollection(collection: string): Promise<{ deleted: number }> {
   return fetchJson(`${API_BASE}/data/clear/${collection}`, { method: 'DELETE' });
+}
+
+export async function importInfra(collection: string, records: unknown[]): Promise<{ inserted: number; collection: string }> {
+  return fetchJson(`${API_BASE}/data/import/infra/${collection}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(records),
+  });
 }
 
 /* ---------- Infrastructure ---------- */

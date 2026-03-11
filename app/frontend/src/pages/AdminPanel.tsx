@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { Download, Upload, RefreshCw, X, Layers, TrainFront, Hospital as HospitalIcon, School as SchoolIcon, Baby, Store, Package, BusFront, AlertTriangle } from 'lucide-react';
-import { exportAll, importPlots, getStats, clearCollection } from '../api';
+import { exportAll, importPlots, importInfra, getStats, clearCollection } from '../api';
 import { getErrorMessage } from '../utils';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -11,6 +11,7 @@ export default function AdminPanel() {
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const fileInput = useRef<HTMLInputElement>(null);
+  const infraFileInput = useRef<HTMLInputElement>(null);
 
   if (!user) {
     return (
@@ -112,6 +113,33 @@ export default function AdminPanel() {
     } finally {
       setLoading(false);
       if (fileInput.current) fileInput.current.value = '';
+    }
+  }
+
+  async function handleImportInfra() {
+    const file = infraFileInput.current?.files?.[0];
+    if (!file) {
+      showErr('Выберите JSON-файл с инфраструктурой');
+      return;
+    }
+    setLoading(true);
+    try {
+      const text = await file.text();
+      const json = JSON.parse(text);
+      let totalInserted = 0;
+      const collections = Object.keys(json);
+      for (const col of collections) {
+        if (!Array.isArray(json[col])) continue;
+        const result = await importInfra(col, json[col]);
+        totalInserted += result.inserted;
+      }
+      showMsg(`Импорт инфраструктуры: ${totalInserted} объектов (${collections.length} коллекций)`);
+      loadStats();
+    } catch (e) {
+      showErr(getErrorMessage(e));
+    } finally {
+      setLoading(false);
+      if (infraFileInput.current) infraFileInput.current.value = '';
     }
   }
 
@@ -223,6 +251,42 @@ export default function AdminPanel() {
           <p className="text-xs mt-3" style={{ color: 'var(--c-text-dim)' }}>
             Поддержка: массив объявлений, объект с ключом «plots» или «data».
             Если фичи уже рассчитаны — повторный расчёт не производится.
+          </p>
+        </div>
+
+        <div
+          className="rounded-xl p-4 mt-4"
+          style={{ background: 'var(--c-surface)', border: '1px solid var(--c-border)' }}
+        >
+          <p className="text-xs uppercase tracking-wide mb-3" style={{ color: 'var(--c-text-dim)', fontFamily: 'var(--font-mono)' }}>
+            Импорт инфраструктуры
+          </p>
+          <div className="flex gap-3 items-center">
+            <input
+              ref={infraFileInput}
+              type="file"
+              accept=".json"
+              className="flex-1 text-sm"
+              style={{
+                color: 'var(--c-text-muted)',
+                fontFamily: 'var(--font-body)',
+              }}
+            />
+            <button
+              onClick={handleImportInfra}
+              disabled={loading}
+              className="btn-ghost text-sm whitespace-nowrap"
+              style={{
+                borderColor: 'var(--c-blue)',
+                color: 'var(--c-blue)',
+              }}
+            >
+              {loading ? '...' : <><Upload size={14} className="inline-block mr-1" />Импорт</>}
+            </button>
+          </div>
+          <p className="text-xs mt-3" style={{ color: 'var(--c-text-dim)' }}>
+            JSON с ключами-коллекциями: metro_stations, hospitals, schools и т.д.
+            Каждая коллекция полностью заменяется.
           </p>
         </div>
       </div>

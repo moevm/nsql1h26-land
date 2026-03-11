@@ -39,6 +39,26 @@ def get_db() -> AsyncIOMotorDatabase:
     return db
 
 
+# ---------- Фабрики репозиториев ----------
+
+def get_plot_repo():
+    """Возвращает экземпляр PlotRepository."""
+    from repositories.plot_repository import PlotRepository
+    return PlotRepository(get_db())
+
+
+def get_infra_repo():
+    """Возвращает экземпляр InfraRepository."""
+    from repositories.infra_repository import InfraRepository
+    return InfraRepository(get_db())
+
+
+def get_user_repo():
+    """Возвращает экземпляр UserRepository."""
+    from repositories.user_repository import UserRepository
+    return UserRepository(get_db())
+
+
 async def ensure_indexes():
     """
     Создаёт необходимые индексы:
@@ -71,38 +91,19 @@ async def ensure_indexes():
         logger.info("Indexes on '%s' ensured", col_name)
 
 
-async def seed_mock_data():
-    """
-    Если инфра-коллекции пусты — заполняет моковыми данными.
-    НЕ перезаписывает существующие данные.
-    """
-    from mock_data import MOCK_DATA
-    assert db is not None
-
-    for col_name, records in MOCK_DATA.items():
-        col = db[col_name]
-        count = await col.count_documents({})
-        if count == 0:
-            await col.insert_many(records)
-            logger.info("Seeded %d docs into '%s'", len(records), col_name)
-        else:
-            logger.info("'%s' already has %d docs, skipping seed", col_name, count)
-
-
 async def seed_admin():
     """
     Создаёт администратора по умолчанию если нет ни одного пользователя.
     Login: admin / admin
     """
-    assert db is not None
     from auth import hash_password
     from datetime import datetime, timezone
 
-    users = db[COL_USERS]
-    count = await users.count_documents({})
+    repo = get_user_repo()
+    count = await repo.count()
     if count == 0:
         pw_hash, salt = hash_password("admin")
-        await users.insert_one({
+        await repo.insert_one({
             "username": "admin",
             "password_hash": pw_hash,
             "salt": salt,

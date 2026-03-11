@@ -114,7 +114,7 @@ class SearchQuery(BaseModel):
 
 class SearchResultItem(PlotOut):
     """Результат поиска с дополнительными скорами."""
-    search_score: Optional[float] = None
+    combined_score: Optional[float] = None
     jina_score: Optional[float] = None
 
 

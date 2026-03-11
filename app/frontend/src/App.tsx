@@ -1,6 +1,6 @@
 import { lazy, Suspense } from 'react';
 import { Routes, Route, Link, useLocation } from 'react-router-dom';
-import { LayoutGrid, Map, PlusSquare, Database, LogIn, User, LogOut, Shield } from 'lucide-react';
+import { LayoutGrid, Map, PlusSquare, Database, LogIn, User, LogOut, Shield, List } from 'lucide-react';
 import { useAuth } from './contexts/AuthContext';
 
 const PlotsList = lazy(() => import('./pages/PlotsList'));
@@ -11,6 +11,7 @@ const SearchResults = lazy(() => import('./pages/SearchResults'));
 const AdminPanel = lazy(() => import('./pages/AdminPanel'));
 const PlotsMap = lazy(() => import('./pages/PlotsMap'));
 const LoginPage = lazy(() => import('./pages/LoginPage'));
+const MyPlots = lazy(() => import('./pages/MyPlots'));
 
 export default function App() {
   const location = useLocation();
@@ -20,6 +21,7 @@ export default function App() {
     { to: '/', label: 'Каталог', Icon: LayoutGrid, show: true },
     { to: '/map', label: 'Карта', Icon: Map, show: true },
     { to: '/add', label: 'Новый участок', Icon: PlusSquare, show: !!user },
+    { to: '/my', label: 'Мои объявления', Icon: List, show: !!user },
     { to: '/admin', label: 'Панель данных', Icon: Database, show: isAdmin },
   ];
 
@@ -154,6 +156,7 @@ export default function App() {
           <Route path="/plots/:id" element={<PlotDetail />} />
           <Route path="/plots/:id/edit" element={<EditPlot />} />
           <Route path="/add" element={<AddPlot />} />
+          <Route path="/my" element={<MyPlots />} />
           <Route path="/search" element={<SearchResults />} />
           <Route path="/admin" element={<AdminPanel />} />
           <Route path="/login" element={<LoginPage />} />

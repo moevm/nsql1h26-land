@@ -1,49 +1,106 @@
 """
-Сервис поиска: vector search (MongoDB Atlas HNSW) + Jina Reranker.
+Сервис поиска: BM25 pre-ranking + feature scoring + Jina Reranker.
 
 Этапы:
-  1. Из запроса извлекаем эмбеддинг через sentence-transformers
-  2. MongoDB Atlas $vectorSearch → top 100 кандидатов
-  3. Jina Reranker → финальная сортировка по семантической релевантности
+  1. Загружаем кандидатов из MongoDB (с фильтрами)
+  2. BM25 ранжирование по текстовому запросу
+  3. Комбинированный скор: combined = α·feature_norm + β·bm25_norm
+  4. Jina Reranker → финальная сортировка по семантической релевантности
 
 Мемоизация: результаты Jina хранятся в памяти (до CACHE_TTL секунд).
 При пагинации по закэшированным результатам Jina повторно не вызывается.
-Повторный вызов происходит только если пользователь листает за пределы кэша.
 """
 
 import hashlib
 import logging
-import math
+import re
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
-import numpy as np
 import requests
 from motor.motor_asyncio import AsyncIOMotorDatabase
+from rank_bm25 import BM25Okapi
+from repositories.plot_repository import PlotRepository
 from config import (
-    COL_PLOTS,
     SEARCH_VECTOR_TOP_K,
-    SEARCH_VECTOR_EXPAND_STEP,
-    SEARCH_VECTOR_MAX_K,
     SEARCH_JINA_TOP_N,
     JINA_SCORE_THRESHOLD,
     JINA_API_KEY, JINA_RERANK_URL, JINA_RERANK_MODEL,
     ALPHA, BETA,
 )
-from services.feature_service import compute_query_embedding
 
 logger = logging.getLogger(__name__)
 
+# --------------- BM25 helpers ---------------
+
+def _tokenize_ru(text: str) -> list[str]:
+    """Простая токенизация для русского текста."""
+    return re.findall(r"[а-яёa-z0-9]+", text.lower())
+
+
+def _bm25_rank(
+    query: str,
+    candidates: list[dict],
+    top_k: int = SEARCH_VECTOR_TOP_K,
+) -> list[dict]:
+    """
+    BM25 ранжирование кандидатов по текстовому запросу.
+    Добавляет поле bm25_score, возвращает top_k.
+    """
+    if not query or not query.strip():
+        for c in candidates:
+            c["bm25_score"] = 0.0
+        return sorted(candidates, key=lambda x: x.get("feature_score", 0), reverse=True)[:top_k]
+
+    corpus = [
+        _tokenize_ru(f"{c.get('title', '')} {c.get('description', '')}")
+        for c in candidates
+    ]
+    bm25 = BM25Okapi(corpus)
+    scores = bm25.get_scores(_tokenize_ru(query))
+
+    for i, c in enumerate(candidates):
+        c["bm25_score"] = round(float(scores[i]), 4)
+
+    ranked = sorted(candidates, key=lambda x: x["bm25_score"], reverse=True)
+    return ranked[:top_k]
+
+
+def _compute_combined(candidates: list[dict]) -> list[dict]:
+    """
+    Нормализует feature_score и bm25_score в [0,1], вычисляет
+    combined_score = α·feature_norm + β·bm25_norm.
+    """
+    if not candidates:
+        return candidates
+
+    fs_vals = [c.get("feature_score", 0) for c in candidates]
+    bm_vals = [c.get("bm25_score", 0) for c in candidates]
+
+    fs_min, fs_max = min(fs_vals), max(fs_vals)
+    fs_range = fs_max - fs_min if fs_max - fs_min > 1e-9 else 1.0
+
+    bm_min, bm_max = min(bm_vals), max(bm_vals)
+    bm_range = bm_max - bm_min if bm_max - bm_min > 1e-9 else 1.0
+
+    for c in candidates:
+        fs_norm = (c.get("feature_score", 0) - fs_min) / fs_range
+        bm_norm = (c.get("bm25_score", 0) - bm_min) / bm_range
+        c["combined_score"] = round(ALPHA * fs_norm + BETA * bm_norm, 4)
+
+    candidates.sort(key=lambda x: x["combined_score"], reverse=True)
+    return candidates
+
+
 # --------------- In-memory search cache ---------------
 CACHE_TTL = 300  # 5 минут
-MAX_CACHE_SIZE = 50  # максимум записей
+MAX_CACHE_SIZE = 50
 
 
 @dataclass
 class _CacheEntry:
     results: list[dict]
     timestamp: float
-    vector_top_k: int
 
 
 _search_cache: dict[str, _CacheEntry] = {}
@@ -55,105 +112,16 @@ def _cache_key(query: str, filters: dict | None) -> str:
 
 
 def _evict_expired() -> None:
-    """Удаляем просроченные записи и обрезаем до MAX_CACHE_SIZE."""
     now = time.time()
     expired = [k for k, v in _search_cache.items() if now - v.timestamp > CACHE_TTL]
     for k in expired:
         del _search_cache[k]
-    # FIFO eviction
     while len(_search_cache) > MAX_CACHE_SIZE:
         oldest_key = min(_search_cache, key=lambda k: _search_cache[k].timestamp)
         del _search_cache[oldest_key]
 
 
-async def _vector_search_atlas(
-    db: AsyncIOMotorDatabase,
-    query_embedding: list[float],
-    top_k: int = SEARCH_VECTOR_TOP_K,
-    filters: dict | None = None,
-) -> list[dict]:
-    """
-    MongoDB Atlas $vectorSearch по HNSW-индексу.
-    Требует созданный search-индекс 'vector_index' на поле 'embedding'.
-    """
-    vs_stage = {
-        "$vectorSearch": {
-            "index": "vector_index",
-            "path": "embedding",
-            "queryVector": query_embedding,
-            "numCandidates": top_k * 2,
-            "limit": top_k,
-        }
-    }
-    if filters:
-        vs_stage["$vectorSearch"]["filter"] = filters
-
-    pipeline = [
-        vs_stage,
-        {"$addFields": {"search_score": {"$meta": "vectorSearchScore"}}},
-        {"$project": {"embedding": 0}},
-    ]
-
-    cursor = db[COL_PLOTS].aggregate(pipeline)
-    return await cursor.to_list(length=top_k)
-
-
-async def _vector_search_fallback(
-    db: AsyncIOMotorDatabase,
-    query_embedding: list[float],
-    top_k: int = SEARCH_VECTOR_TOP_K,
-    filters: dict | None = None,
-) -> list[dict]:
-    """
-    Фолбэк: загружаем все эмбеддинги, считаем косинусное сходство в Python.
-    Используется когда Atlas vector search недоступен.
-    """
-    match_stage = filters or {}
-    cursor = db[COL_PLOTS].find(match_stage, {"embedding": 1, "_id": 1})
-    docs = await cursor.to_list(length=None)
-
-    if not docs:
-        return []
-
-    ids = [d["_id"] for d in docs]
-    embeddings = np.array([d.get("embedding", [0] * 384) for d in docs])
-    query_vec = np.array(query_embedding)
-
-    # cosine similarity (вектора уже нормализованы)
-    scores = embeddings @ query_vec
-    top_indices = np.argsort(scores)[::-1][:top_k]
-
-    top_ids = [ids[i] for i in top_indices]
-    top_scores = {str(ids[i]): float(scores[i]) for i in top_indices}
-
-    # загружаем полные документы
-    cursor = db[COL_PLOTS].find({"_id": {"$in": top_ids}}, {"embedding": 0})
-    full_docs = await cursor.to_list(length=top_k)
-
-    for doc in full_docs:
-        doc["search_score"] = top_scores.get(str(doc["_id"]), 0)
-
-    full_docs.sort(key=lambda x: x.get("search_score", 0), reverse=True)
-    return full_docs
-
-
-async def vector_search(
-    db: AsyncIOMotorDatabase,
-    query_embedding: list[float],
-    top_k: int = SEARCH_VECTOR_TOP_K,
-    filters: dict | None = None,
-) -> list[dict]:
-    """Пробует Atlas $vectorSearch, при ошибке — фолбэк."""
-    try:
-        results = await _vector_search_atlas(db, query_embedding, top_k, filters)
-        if results:
-            logger.info("Atlas $vectorSearch returned %d docs", len(results))
-            return results
-    except Exception as e:
-        logger.warning("Atlas $vectorSearch failed (%s), using fallback", e)
-
-    return await _vector_search_fallback(db, query_embedding, top_k, filters)
-
+# --------------- Jina Reranker ---------------
 
 def jina_rerank(
     query: str,
@@ -209,11 +177,12 @@ def jina_rerank(
 
 
 def _apply_threshold(results: list[dict], threshold: float) -> list[dict]:
-    """Отсекает результаты с jina_score ниже порога."""
     if threshold <= 0:
         return results
     return [r for r in results if r.get("jina_score", 1.0) >= threshold]
 
+
+# --------------- Main search ---------------
 
 async def search_plots(
     db: AsyncIOMotorDatabase,
@@ -226,10 +195,9 @@ async def search_plots(
     max_area: float | None = None,
 ) -> tuple[list[dict], int, bool]:
     """
-    Полный поисковый пайплайн с мемоизацией.
-    Возвращает (page_items, total_cached, can_expand).
+    Поисковый пайплайн: BM25 + feature scoring → Jina Reranker.
+    Возвращает (page_items, total_cached, can_expand=False).
     """
-    # Собираем MongoDB-фильтры
     mongo_filters: dict = {}
     if min_price is not None:
         mongo_filters["price"] = {"$gte": min_price}
@@ -248,45 +216,32 @@ async def search_plots(
     _evict_expired()
 
     entry = _search_cache.get(key)
-
-    # Кэш валиден и хватает результатов → возвращаем срез
-    if (
-        entry is not None
-        and (now - entry.timestamp) < CACHE_TTL
-        and len(entry.results) >= needed
-    ):
+    if entry is not None and (now - entry.timestamp) < CACHE_TTL and len(entry.results) >= needed:
         total = len(entry.results)
-        can_expand = entry.vector_top_k < SEARCH_VECTOR_MAX_K
-        return entry.results[offset:offset + page_size], total, can_expand
+        return entry.results[offset:offset + page_size], total, False
 
-    # Кэш есть, но результатов не хватает → расширяем vector search
-    if (
-        entry is not None
-        and (now - entry.timestamp) < CACHE_TTL
-        and entry.vector_top_k < SEARCH_VECTOR_MAX_K
-    ):
-        new_top_k = min(entry.vector_top_k + SEARCH_VECTOR_EXPAND_STEP, SEARCH_VECTOR_MAX_K)
-        logger.info("Expanding search cache: %d → %d candidates", entry.vector_top_k, new_top_k)
-    else:
-        new_top_k = SEARCH_VECTOR_TOP_K
-
-    query_embedding = compute_query_embedding(query)
-
-    candidates = await vector_search(
-        db, query_embedding, top_k=new_top_k,
-        filters=mongo_filters if mongo_filters else None,
+    # 1. Загружаем кандидатов из БД (без embedding)
+    repo = PlotRepository(db)
+    candidates = await repo.find_all(
+        query_filter=mongo_filters or None,
+        projection={"embedding": 0},
     )
 
     if not candidates:
-        _search_cache[key] = _CacheEntry(results=[], timestamp=now, vector_top_k=new_top_k)
+        _search_cache[key] = _CacheEntry(results=[], timestamp=now)
         return [], 0, False
 
-    # Jina реранкирует ВСЕ кандидаты, затем отсекаем по порогу
-    reranked = jina_rerank(query, candidates, top_n=len(candidates))
+    # 2. BM25 ранжирование → top K
+    bm25_top = _bm25_rank(query, candidates, top_k=SEARCH_VECTOR_TOP_K)
+
+    # 3. Комбинированный скор: α·features + β·bm25
+    bm25_top = _compute_combined(bm25_top)
+
+    # 4. Jina реранкирует все кандидаты, затем отсекаем по порогу
+    reranked = jina_rerank(query, bm25_top, top_n=len(bm25_top))
     reranked = _apply_threshold(reranked, JINA_SCORE_THRESHOLD)
 
-    _search_cache[key] = _CacheEntry(results=reranked, timestamp=now, vector_top_k=new_top_k)
+    _search_cache[key] = _CacheEntry(results=reranked, timestamp=now)
 
     total = len(reranked)
-    can_expand = new_top_k < SEARCH_VECTOR_MAX_K
-    return reranked[offset:offset + page_size], total, can_expand
+    return reranked[offset:offset + page_size], total, False

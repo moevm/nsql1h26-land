@@ -2,11 +2,13 @@
 Гео-сервис: расчёт расстояний до инфраструктуры через MongoDB $geoNear.
 
 Использует 2dsphere индексы на коллекциях инфраструктуры.
+Работает через InfraRepository.
 """
 
 import asyncio
 import logging
 from motor.motor_asyncio import AsyncIOMotorDatabase
+from repositories.infra_repository import InfraRepository
 from config import (
     COL_METRO, COL_HOSPITALS, COL_SCHOOLS,
     COL_KINDERGARTENS, COL_STORES, COL_PICKUP_POINTS,
@@ -41,23 +43,10 @@ _INFRA_WEIGHTS = {
 }
 
 
-async def _nearest(db: AsyncIOMotorDatabase, collection: str, lon: float, lat: float) -> dict:
-    """Находит ближайший объект в коллекции через $geoNear."""
-    pipeline = [
-        {
-            "$geoNear": {
-                "near": {"type": "Point", "coordinates": [lon, lat]},
-                "distanceField": "dist_meters",
-                "spherical": True,
-            }
-        },
-        {"$limit": 1},
-        {"$project": {"name": 1, "dist_meters": 1, "type": 1}},
-    ]
-    cursor = db[collection].aggregate(pipeline)
-    result = await cursor.to_list(length=1)
-    if result:
-        doc = result[0]
+async def _nearest(repo: InfraRepository, collection: str, lon: float, lat: float) -> dict:
+    """Находит ближайший объект в коллекции через репозиторий."""
+    doc = await repo.find_nearest(collection, lon, lat)
+    if doc:
         return {
             "name": doc.get("name", ""),
             "km": round(doc["dist_meters"] / 1000.0, 2),
@@ -79,15 +68,16 @@ async def compute_distances(db: AsyncIOMotorDatabase, lat: float, lon: float) ->
             "negative_score": 0.71,
         }
     """
+    repo = InfraRepository(db)
     distances = {}
 
     # Параллельный запрос ко всем инфра-коллекциям + негативным объектам
     tasks = []
     keys = []
     for col_name, dist_key in _INFRA_MAP.items():
-        tasks.append(_nearest(db, col_name, lon, lat))
+        tasks.append(_nearest(repo, col_name, lon, lat))
         keys.append(dist_key)
-    tasks.append(_nearest(db, COL_NEGATIVE, lon, lat))
+    tasks.append(_nearest(repo, COL_NEGATIVE, lon, lat))
     keys.append("nearest_negative")
 
     results = await asyncio.gather(*tasks)

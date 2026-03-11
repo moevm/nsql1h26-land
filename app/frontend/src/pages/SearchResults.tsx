@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useSearchParams, Link } from 'react-router-dom';
-import { Search } from 'lucide-react';
+
 import { searchPlots, type SearchResponse } from '../api';
 import { formatPrice, getErrorMessage } from '../utils';
 import ScoreGauge from '../components/ScoreGauge';
@@ -68,13 +68,12 @@ export default function SearchResults() {
       <form onSubmit={handleSearch} className="mb-6">
         <div className="flex gap-3">
           <div className="flex-1 relative">
-            <Search size={16} className="absolute left-4 top-1/2 -translate-y-1/2" style={{ color: 'var(--c-text-dim)' }} />
             <input
               type="text"
               value={searchInput}
               onChange={(e) => setSearchInput(e.target.value)}
               placeholder="Поиск: тихий участок у воды, ИЖС с коммуникациями..."
-              className="input-field pl-10"
+              className="input-field"
             />
           </div>
           <button type="submit" className="btn-primary whitespace-nowrap">Найти</button>
@@ -158,10 +157,10 @@ export default function SearchResults() {
                       Jina {(plot.jina_score * 100).toFixed(0)}
                     </span>
                   )}
-                  {plot.search_score != null && (
+                  {plot.combined_score != null && (
                     <span className="text-xs px-2 py-0.5 rounded-md"
                       style={{ background: 'var(--c-green-dim)', color: 'var(--c-green)', fontFamily: 'var(--font-mono)', fontSize: '0.65rem' }}>
-                      Vec {(plot.search_score * 100).toFixed(0)}
+                      Score {(plot.combined_score * 100).toFixed(0)}
                     </span>
                   )}
                   {plot.features_text && (
