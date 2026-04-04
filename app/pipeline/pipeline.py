@@ -61,11 +61,9 @@ def _load_cache(cache_path: str) -> list[dict] | None:
         try:
             with open(cache_path, "r", encoding="utf-8") as f:
                 data = json.load(f)
-            # Проверяем новый формат: вложенный dict features + embedding
+            # Проверяем формат: вложенный dict features + рассчитанные score
             if (data
                     and isinstance(data[0].get("features"), dict)
-                    and isinstance(data[0].get("embedding"), list)
-                    and len(data[0]["embedding"]) > 0
                     and "infra_score" in data[0]
                     and "feature_score" in data[0]):
                 return data

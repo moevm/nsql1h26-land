@@ -8,7 +8,7 @@ from pymongo import GEOSPHERE
 from config import (
     MONGODB_URI, MONGODB_DB,
     COL_PLOTS, INFRA_COLLECTIONS, COL_NEGATIVE,
-    EMBEDDING_DIM, COL_USERS,
+    COL_USERS,
 )
 
 logger = logging.getLogger(__name__)
@@ -65,7 +65,6 @@ async def ensure_indexes():
       - 2dsphere на geo_location в plots
       - 2dsphere на location во всех инфра/негативных коллекциях
       - уникальный индекс на avito_id в plots
-    Для HNSW vector search — индекс создаётся через MongoDB Atlas Search UI/API.
     """
     assert db is not None
 

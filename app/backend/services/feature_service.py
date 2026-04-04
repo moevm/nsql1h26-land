@@ -2,8 +2,7 @@
 Извлечение текстовых фич через sentence-transformers (локально).
 
 Если sentence-transformers не установлен — работает в stub-режиме:
-  - эмбеддинги = нулевой вектор
-  - фичи = 0.0
+    - фичи = 0.0
 """
 
 import logging
@@ -11,7 +10,6 @@ import numpy as np
 
 from config import (
     EMBEDDINGS_MODEL_NAME,
-    EMBEDDING_DIM,
     FEATURE_DEFINITIONS,
     FEATURE_WEIGHTS,
     FEATURE_THRESHOLD,
@@ -26,7 +24,7 @@ try:
     _HAS_ST = True
 except ImportError:
     _HAS_ST = False
-    logger.warning("sentence-transformers not installed — using stub (zero embeddings)")
+    logger.warning("sentence-transformers not installed — using stub (zero features)")
 
 _model = None
 _feature_embs: np.ndarray | None = None
@@ -47,24 +45,10 @@ def _get_feature_embeddings() -> np.ndarray:
     if _feature_embs is None:
         model = _get_model()
         if model is None:
-            _feature_embs = np.zeros((len(FEATURE_DEFINITIONS), EMBEDDING_DIM))
-        else:
-            feature_texts = [FEATURE_DEFINITIONS[k][0] for k in FEATURE_DEFINITIONS]
-            _feature_embs = model.encode(feature_texts, normalize_embeddings=True, show_progress_bar=False)
+            return np.zeros((len(FEATURE_DEFINITIONS), len(FEATURE_DEFINITIONS)))
+        feature_texts = [FEATURE_DEFINITIONS[k][0] for k in FEATURE_DEFINITIONS]
+        _feature_embs = model.encode(feature_texts, normalize_embeddings=True, show_progress_bar=False)
     return _feature_embs
-
-
-def _zero_embedding() -> list[float]:
-    return [0.0] * EMBEDDING_DIM
-
-
-def compute_embedding(text: str) -> list[float]:
-    """Вычисляет эмбеддинг текста для HNSW-индекса."""
-    model = _get_model()
-    if model is None:
-        return _zero_embedding()
-    emb = model.encode([text[:1500]], normalize_embeddings=True, show_progress_bar=False)
-    return emb[0].tolist()
 
 
 def _empty_result() -> dict:
@@ -73,7 +57,6 @@ def _empty_result() -> dict:
         "features": {fn: 0.0 for fn in feature_names},
         "feature_score": 0.0,
         "features_text": "",
-        "embedding": _zero_embedding(),
     }
 
 
@@ -85,8 +68,7 @@ def extract_features(title: str, description: str, geo_ref: str = "") -> dict:
         {
             "features": {"has_gas": 0.42, ...},
             "feature_score": 0.35,
-            "features_text": "газ (42%), ...",
-            "embedding": [0.1, 0.2, ...]
+            "features_text": "газ (42%), ..."
         }
     """
     model = _get_model()
@@ -120,13 +102,10 @@ def extract_features(title: str, description: str, geo_ref: str = "") -> dict:
         f"{FEATURE_LABELS.get(f, f)} ({p:.0%})" for f, p in found
     )
 
-    embedding = desc_emb[0].tolist()
-
     return {
         "features": features,
         "feature_score": feature_score,
         "features_text": features_text,
-        "embedding": embedding,
     }
 
 
@@ -174,7 +153,6 @@ def extract_features_batch(records: list[dict]) -> list[dict]:
             "features": features,
             "feature_score": feature_score,
             "features_text": features_text,
-            "embedding": desc_embs[i].tolist(),
         })
 
     return results

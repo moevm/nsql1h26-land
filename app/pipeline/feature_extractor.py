@@ -96,7 +96,4 @@ def enrich_with_features(records: list[dict]) -> list[dict]:
             for f, p in found
         )
 
-        # Сохраняем embedding для HNSW-индекса
-        rec["embedding"] = desc_embs[i].tolist()
-
     return records

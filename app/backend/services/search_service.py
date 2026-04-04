@@ -220,12 +220,9 @@ async def search_plots(
         total = len(entry.results)
         return entry.results[offset:offset + page_size], total, False
 
-    # 1. Загружаем кандидатов из БД (без embedding)
+    # 1. Загружаем кандидатов из БД
     repo = PlotRepository(db)
-    candidates = await repo.find_all(
-        query_filter=mongo_filters or None,
-        projection={"embedding": 0},
-    )
+    candidates = await repo.find_all(query_filter=mongo_filters or None)
 
     if not candidates:
         _search_cache[key] = _CacheEntry(results=[], timestamp=now)

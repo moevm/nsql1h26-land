@@ -212,7 +212,7 @@ async def get_plot(plot_id: str):
 async def create_plot(data: PlotCreate, user: dict | None = Depends(get_optional_user)):
     """
     Добавить объявление.
-    Автоматически рассчитывает текстовые фичи, эмбединги и расстояния.
+    Автоматически рассчитывает текстовые фичи и расстояния.
     """
     db = get_db()
     repo = get_plot_repo()
@@ -223,7 +223,7 @@ async def create_plot(data: PlotCreate, user: dict | None = Depends(get_optional
     if data.price and area and area > 0:
         price_per_sotka = round(data.price / area, 2)
 
-    # Текстовые фичи + эмбеддинг
+    # Текстовые фичи
     feat_data = extract_features(data.title, data.description, data.geo_ref)
 
     # Гео-расстояния
@@ -253,7 +253,6 @@ async def create_plot(data: PlotCreate, user: dict | None = Depends(get_optional
         "thumbnail": data.thumbnail,
         "images_count": data.images_count,
         "was_lowered": data.was_lowered,
-        "embedding": feat_data["embedding"],
         "features": feat_data["features"],
         "feature_score": feat_data["feature_score"],
         "features_text": feat_data["features_text"],
@@ -268,7 +267,6 @@ async def create_plot(data: PlotCreate, user: dict | None = Depends(get_optional
 
     result_id = await repo.insert_one(doc)
     doc["_id"] = str(result_id)
-    doc.pop("embedding", None)
 
     return PlotOut(**doc)
 
@@ -326,7 +324,6 @@ async def update_plot(plot_id: str, data: PlotUpdate, user: dict = Depends(get_c
 
     if text_changed:
         feat_data = extract_features(title, description, geo_ref)
-        updates["embedding"] = feat_data["embedding"]
         updates["features"] = feat_data["features"]
         updates["feature_score"] = feat_data["feature_score"]
         updates["features_text"] = feat_data["features_text"]

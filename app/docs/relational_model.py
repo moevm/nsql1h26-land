@@ -47,10 +47,6 @@ TABLES = [
         ("created_at",      "TIMESTAMPTZ",   "DEFAULT now()"),
         ("updated_at",      "TIMESTAMPTZ",   ""),
     ]),
-    ("plot_embeddings", [
-        ("plot_id",   "INT",          "PK, FK → plots.id"),
-        ("embedding", "VECTOR(384)",  "NOT NULL"),
-    ]),
     ("plot_features", [
         ("plot_id",           "INT",         "PK, FK → plots.id"),
         ("has_gas",           "DOUBLE PREC.",""),
@@ -135,7 +131,6 @@ TABLES = [
 POSITIONS = {
     "users":            (0.5,  9.0),
     "plots":            (5.5,  8.0),
-    "plot_embeddings":  (11.0, 11.0),
     "plot_features":    (11.0, 7.5),
     "plot_distances":   (11.0, 3.0),
     "metro_stations":   (0.0, 5.5),
@@ -151,7 +146,6 @@ POSITIONS = {
 # ── Связи (from_table, to_table, label, style) ──────────────────────────
 RELATIONS = [
     ("plots", "users",            "owner_id",          "solid"),
-    ("plot_embeddings", "plots",  "plot_id",           "solid"),
     ("plot_features", "plots",    "plot_id",           "solid"),
     ("plot_distances", "plots",   "plot_id",           "solid"),
     ("plot_distances", "metro_stations",   "nearest_metro_id",    "dashed"),
@@ -168,7 +162,6 @@ RELATIONS = [
 COLORS = {
     "users":  "#A8D8EA",
     "plots":  "#FCBAD3",
-    "plot_embeddings": "#FFE3E3",
     "plot_features":   "#FFE3E3",
     "plot_distances":  "#FFE3E3",
     "metro_stations": "#C3FDB8", "hospitals": "#C3FDB8",

@@ -12,7 +12,6 @@ from datetime import datetime
 def serialize_doc(doc: dict) -> dict:
     """Конвертирует MongoDB-документ в сериализуемый dict."""
     doc["_id"] = str(doc["_id"])
-    doc.pop("embedding", None)
     return doc
 
 

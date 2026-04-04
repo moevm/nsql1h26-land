@@ -2,10 +2,6 @@
 Репозиторий коллекции plots — CRUD и поисковые операции.
 """
 
-import math
-from datetime import datetime, timezone
-from typing import Optional
-
 from bson import ObjectId
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
@@ -32,9 +28,8 @@ class PlotRepository:
         limit: int = 20,
         projection: dict | None = None,
     ) -> list[dict]:
-        proj = projection or {"embedding": 0}
         cursor = (
-            self._col.find(query_filter or {}, proj)
+            self._col.find(query_filter or {}, projection)
             .sort(sort_field, sort_dir)
             .skip(skip)
             .limit(limit)
@@ -42,8 +37,7 @@ class PlotRepository:
         return await cursor.to_list(length=limit)
 
     async def find_by_id(self, oid: ObjectId, projection: dict | None = None) -> dict | None:
-        proj = projection or {"embedding": 0}
-        return await self._col.find_one({"_id": oid}, proj)
+        return await self._col.find_one({"_id": oid}, projection)
 
     async def find_all(
         self,
@@ -82,47 +76,10 @@ class PlotRepository:
         result = await self._col.delete_many({})
         return result.deleted_count
 
-    # ---------- Vector search (Atlas) ----------
-
-    async def vector_search_atlas(
-        self,
-        query_embedding: list[float],
-        top_k: int = 100,
-        filters: dict | None = None,
-    ) -> list[dict]:
-        vs_stage: dict = {
-            "$vectorSearch": {
-                "index": "vector_index",
-                "path": "embedding",
-                "queryVector": query_embedding,
-                "numCandidates": top_k * 2,
-                "limit": top_k,
-            }
-        }
-        if filters:
-            vs_stage["$vectorSearch"]["filter"] = filters
-
-        pipeline = [
-            vs_stage,
-            {"$addFields": {"search_score": {"$meta": "vectorSearchScore"}}},
-            {"$project": {"embedding": 0}},
-        ]
-        cursor = self._col.aggregate(pipeline)
-        return await cursor.to_list(length=top_k)
-
-    async def vector_search_fallback(
-        self,
-        query_filter: dict | None = None,
-    ) -> list[dict]:
-        """Загружает все эмбеддинги для фолбэка (cosine в Python)."""
-        cursor = self._col.find(query_filter or {}, {"embedding": 1, "_id": 1})
-        return await cursor.to_list(length=None)
-
     async def find_by_ids(
         self,
         ids: list[ObjectId],
         projection: dict | None = None,
     ) -> list[dict]:
-        proj = projection or {"embedding": 0}
-        cursor = self._col.find({"_id": {"$in": ids}}, proj)
+        cursor = self._col.find({"_id": {"$in": ids}}, projection)
         return await cursor.to_list(length=len(ids))

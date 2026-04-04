@@ -15,7 +15,7 @@ from config import (
 )
 from services.feature_service import extract_features_batch
 from services.geo_service import compute_distances, compute_total_score
-from config import EMBEDDING_DIM, FEATURE_DEFINITIONS
+from config import FEATURE_DEFINITIONS
 from utils import serialize_doc_deep as _serialize_doc, parse_area
 
 router = APIRouter(prefix="/api/data", tags=["data-io"])
@@ -65,7 +65,7 @@ async def export_collection(collection: str):
 async def import_plots(records: list[dict], _: dict = Depends(require_admin)):
     """
     Импорт объявлений.
-    Если в записи уже есть features/embedding — используем их.
+    Если в записи уже есть features — используем их.
     Если нет — рассчитываем автоматически.
     """
     db = get_db()
@@ -118,7 +118,6 @@ async def import_plots(records: list[dict], _: dict = Depends(require_admin)):
             "features": rec["features"],
             "feature_score": rec["feature_score"],
             "features_text": rec.get("features_text", ""),
-            "embedding": rec.get("embedding", [0.0] * EMBEDDING_DIM),
         }
 
     # Для тех, у кого фичи плоскими полями (enriched_cache.json) — собираем dict
@@ -129,7 +128,6 @@ async def import_plots(records: list[dict], _: dict = Depends(require_admin)):
             "features": features_dict,
             "feature_score": rec["feature_score"],
             "features_text": rec.get("features_text", ""),
-            "embedding": rec.get("embedding", [0.0] * EMBEDDING_DIM),
         }
 
     inserted = 0
@@ -176,7 +174,6 @@ async def import_plots(records: list[dict], _: dict = Depends(require_admin)):
             "thumbnail": rec.get("thumbnail", ""),
             "images_count": rec.get("images_count", rec.get("imagesCount", 0)),
             "was_lowered": rec.get("was_lowered", rec.get("wasLowered", False)),
-            "embedding": feat["embedding"],
             "features": feat["features"],
             "feature_score": feat["feature_score"],
             "features_text": feat["features_text"],

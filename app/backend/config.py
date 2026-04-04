@@ -1,7 +1,3 @@
-"""
-Конфигурация бэкенда — сервиса объявлений земельных участков.
-"""
-
 import os
 from dotenv import load_dotenv
 
@@ -29,7 +25,6 @@ INFRA_COLLECTIONS = [
 
 # --- Sentence-transformers ---
 EMBEDDINGS_MODEL_NAME = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
-EMBEDDING_DIM = 384  # размерность эмбеддинга модели
 
 # --- Jina API ---
 JINA_API_KEY = os.getenv("JINA_API_KEY", "")
@@ -89,9 +84,7 @@ NEGATIVE_MIN_DISTANCE_KM = 0.5
 NEGATIVE_MAX_DISTANCE_KM = 20.0
 
 # --- Search ---
-SEARCH_VECTOR_TOP_K = 100        # начальное кол-во кандидатов из vector search
-SEARCH_VECTOR_EXPAND_STEP = 100  # шаг расширения при выходе за кэш
-SEARCH_VECTOR_MAX_K = 500        # максимальный top_k для vector search
+SEARCH_VECTOR_TOP_K = 100        # кол-во кандидатов для BM25 pre-ranking
 SEARCH_JINA_TOP_N = 20
 JINA_SCORE_THRESHOLD = 0.1        # порог Jina score — ниже отсекаем
 ALPHA = 0.6
