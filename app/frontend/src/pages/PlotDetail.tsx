@@ -90,7 +90,7 @@ export default function PlotDetail() {
   if (error) return <p className="text-center py-16" style={{ color: 'var(--c-red)' }}>{error}</p>;
   if (!plot) return <p className="text-center py-16" style={{ color: 'var(--c-text-dim)' }}>Не найдено</p>;
 
-  const d = plot.distances;
+  const d = plot.distances ?? {} as Record<string, never>;
 
   return (
     <div className="animate-fade-in-up max-w-5xl mx-auto">
@@ -272,6 +272,7 @@ export default function PlotDetail() {
           </div>
 
           {/* Distances */}
+          {plot.distances && (
           <div
             className="rounded-xl p-5"
             style={{ background: 'var(--c-card)', border: '1px solid var(--c-border)' }}
@@ -293,6 +294,7 @@ export default function PlotDetail() {
               <DistanceRow icon={AlertTriangle} label="НЕГАТИВ" name={d.nearest_negative?.name} km={d.nearest_negative?.km} />
             </div>
           </div>
+          )}
 
           {/* Coordinates */}
           <div

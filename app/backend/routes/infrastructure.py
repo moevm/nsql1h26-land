@@ -2,6 +2,9 @@
 Маршруты управления инфраструктурными коллекциями.
 """
 
+import asyncio
+import logging
+
 from bson import ObjectId
 from fastapi import APIRouter, Depends, HTTPException
 
@@ -9,6 +12,9 @@ from database import get_infra_repo
 from config import INFRA_COLLECTIONS, COL_NEGATIVE
 from models import InfraObjectCreate, InfraObjectOut
 from auth import require_admin
+from services.geo_service import recalculate_all_scores
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/infra", tags=["infrastructure"])
 
@@ -56,6 +62,7 @@ async def add_object(collection: str, data: InfraObjectCreate, _: dict = Depends
     doc["_id"] = str(inserted_id)
     doc["lat"] = data.lat
     doc["lon"] = data.lon
+    _trigger_recalc(db)
     return InfraObjectOut(**doc)
 
 
@@ -72,6 +79,7 @@ async def delete_object(collection: str, object_id: str, _: dict = Depends(requi
     deleted = await repo.delete_one(collection, oid)
     if not deleted:
         raise HTTPException(404, "Object not found")
+    _trigger_recalc(db)
 
 
 @router.put("/{collection}", status_code=200)

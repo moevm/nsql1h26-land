@@ -4,7 +4,6 @@
 
 import hashlib
 import logging
-import os
 from datetime import datetime, timedelta, timezone
 
 import jwt
@@ -19,20 +18,19 @@ logger = logging.getLogger(__name__)
 
 # --------------- Password hashing ---------------
 
-def hash_password(password: str) -> tuple[str, str]:
-    """Хеширует пароль через PBKDF2-SHA256 с рандомной солью."""
-    salt = os.urandom(32).hex()
+def hash_password(password: str) -> str:
+    """Хеширует пароль через PBKDF2-SHA256 с солью из переменной окружения."""
     pw_hash = hashlib.pbkdf2_hmac(
-        "sha256", password.encode("utf-8"), salt.encode("utf-8"), 100_000
+        "sha256", password.encode("utf-8"), PASSWORD_SALT.encode("utf-8"), 100_000
     ).hex()
-    return pw_hash, salt
+    return pw_hash
 
 
-def verify_password(password: str, pw_hash: str, salt: str) -> bool:
-    """Проверяет пароль по хешу и соли."""
+def verify_password(password: str, pw_hash: str) -> bool:
+    """Проверяет пароль по хешу (соль берётся из переменной окружения)."""
     return (
         hashlib.pbkdf2_hmac(
-            "sha256", password.encode("utf-8"), salt.encode("utf-8"), 100_000
+            "sha256", password.encode("utf-8"), PASSWORD_SALT.encode("utf-8"), 100_000
         ).hex()
         == pw_hash
     )

@@ -87,7 +87,7 @@ export interface Plot {
   features: Record<string, number>;
   feature_score: number;
   features_text: string;
-  distances: PlotDistances;
+  distances?: PlotDistances;
   infra_score: number;
   negative_score: number;
   total_score: number;

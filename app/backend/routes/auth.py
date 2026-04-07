@@ -37,11 +37,10 @@ async def register(data: RegisterRequest):
     if existing:
         raise HTTPException(409, "Username already exists")
 
-    pw_hash, salt = hash_password(data.password)
+    pw_hash = hash_password(data.password)
     doc = {
         "username": data.username,
         "password_hash": pw_hash,
-        "salt": salt,
         "role": "user",
         "created_at": datetime.now(timezone.utc),
     }
@@ -61,7 +60,7 @@ async def login(data: LoginRequest):
     if not user:
         raise HTTPException(401, "Invalid credentials")
 
-    if not verify_password(data.password, user["password_hash"], user["salt"]):
+    if not verify_password(data.password, user["password_hash"]):
         raise HTTPException(401, "Invalid credentials")
 
     user_id = str(user["_id"])

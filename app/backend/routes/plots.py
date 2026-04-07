@@ -106,7 +106,7 @@ async def get_plots_for_map(
     repo = get_plot_repo()
     projection = {
         "title": 1, "price": 1, "area_sotki": 1,
-        "lat": 1, "lon": 1, "total_score": 1,
+        "geo_location": 1, "total_score": 1,
         "location": 1, "features_text": 1,
     }
     total = await repo.count()
@@ -119,6 +119,14 @@ async def get_plots_for_map(
     items = []
     for d in docs:
         d["_id"] = str(d["_id"])
+        geo = d.get("geo_location")
+        if geo and "coordinates" in geo:
+            coords = geo["coordinates"]
+            d["lat"] = coords[1] if len(coords) > 1 else 0
+            d["lon"] = coords[0] if len(coords) > 0 else 0
+        else:
+            d["lat"] = 0
+            d["lon"] = 0
         items.append(d)
     return {"items": items, "total": total, "page": page, "page_size": page_size, "pages": pages}
 
@@ -185,6 +193,12 @@ async def search(
     items = []
     for doc in page_items:
         doc["_id"] = str(doc.get("_id", ""))
+        # Извлекаем lat/lon из geo_location для результатов поиска
+        geo = doc.get("geo_location")
+        if geo and "coordinates" in geo:
+            coords = geo["coordinates"]
+            doc.setdefault("lat", coords[1] if len(coords) > 1 else 0)
+            doc.setdefault("lon", coords[0] if len(coords) > 0 else 0)
         items.append(SearchResultItem(**doc))
 
     pages = math.ceil(total / page_size) if total > 0 else 0
@@ -205,7 +219,15 @@ async def get_plot(plot_id: str):
     if not doc:
         raise HTTPException(404, _ERR_NOT_FOUND)
 
-    return PlotOut(**_serialize(doc))
+    serialized = _serialize(doc)
+    # Вычисляем расстояния в реальном времени
+    lat = serialized.get("lat", 0)
+    lon = serialized.get("lon", 0)
+    if lat and lon:
+        geo_data = await compute_distances(db, lat, lon)
+        serialized["distances"] = geo_data["distances"]
+
+    return PlotOut(**serialized)
 
 
 @router.post("", response_model=PlotOut, status_code=201)
@@ -246,8 +268,6 @@ async def create_plot(data: PlotCreate, user: dict | None = Depends(get_optional
         "location": data.location,
         "address": data.address,
         "geo_ref": data.geo_ref,
-        "lat": data.lat,
-        "lon": data.lon,
         "geo_location": {"type": "Point", "coordinates": [data.lon, data.lat]},
         "url": data.url,
         "thumbnail": data.thumbnail,
@@ -256,7 +276,6 @@ async def create_plot(data: PlotCreate, user: dict | None = Depends(get_optional
         "features": feat_data["features"],
         "feature_score": feat_data["feature_score"],
         "features_text": feat_data["features_text"],
-        "distances": geo_data["distances"],
         "infra_score": geo_data["infra_score"],
         "negative_score": geo_data["negative_score"],
         "total_score": total_score,
@@ -314,8 +333,13 @@ async def update_plot(plot_id: str, data: PlotUpdate, user: dict = Depends(get_c
     title = updates.get("title", existing.get("title", ""))
     description = updates.get("description", existing.get("description", ""))
     geo_ref = updates.get("geo_ref", existing.get("geo_ref", ""))
-    lat = updates.get("lat", existing.get("lat", 0))
-    lon = updates.get("lon", existing.get("lon", 0))
+    # Извлекаем текущие координаты из geo_location
+    existing_geo = existing.get("geo_location", {})
+    existing_coords = existing_geo.get("coordinates", [0, 0])
+    existing_lon = existing_coords[0] if len(existing_coords) > 0 else 0
+    existing_lat = existing_coords[1] if len(existing_coords) > 1 else 0
+    lat = updates.get("lat", existing_lat)
+    lon = updates.get("lon", existing_lon)
     price = updates.get("price", existing.get("price", 0))
     area = updates.get("area_sotki", existing.get("area_sotki"))
 
@@ -328,10 +352,13 @@ async def update_plot(plot_id: str, data: PlotUpdate, user: dict = Depends(get_c
         updates["feature_score"] = feat_data["feature_score"]
         updates["features_text"] = feat_data["features_text"]
 
+    # Убираем lat/lon из updates — они не хранятся отдельно
+    updates.pop("lat", None)
+    updates.pop("lon", None)
+
     if geo_changed:
         updates["geo_location"] = {"type": "Point", "coordinates": [lon, lat]}
         geo_data = await compute_distances(db, lat, lon)
-        updates["distances"] = geo_data["distances"]
         updates["infra_score"] = geo_data["infra_score"]
         updates["negative_score"] = geo_data["negative_score"]
 

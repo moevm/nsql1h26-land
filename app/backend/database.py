@@ -105,7 +105,6 @@ async def seed_admin():
         await repo.insert_one({
             "username": "admin",
             "password_hash": pw_hash,
-            "salt": salt,
             "role": "admin",
             "created_at": datetime.now(timezone.utc),
         })

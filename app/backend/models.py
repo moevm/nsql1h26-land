@@ -80,7 +80,7 @@ class PlotOut(BaseModel):
     features: dict = {}
     feature_score: float = 0
     features_text: str = ""
-    distances: PlotDistances = PlotDistances()
+    distances: Optional[PlotDistances] = None
     infra_score: float = 0
     negative_score: float = 0
     total_score: float = 0

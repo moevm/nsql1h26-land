@@ -10,6 +10,7 @@ import logging
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from repositories.infra_repository import InfraRepository
 from config import (
+    COL_PLOTS,
     COL_METRO, COL_HOSPITALS, COL_SCHOOLS,
     COL_KINDERGARTENS, COL_STORES, COL_PICKUP_POINTS,
     COL_BUS_STOPS, COL_NEGATIVE,
@@ -105,6 +106,42 @@ async def compute_distances(db: AsyncIOMotorDatabase, lat: float, lon: float) ->
         "infra_score": infra_score,
         "negative_score": negative_score,
     }
+
+
+async def recalculate_all_scores(db: AsyncIOMotorDatabase) -> int:
+    """
+    Пересчитывает infra_score, negative_score и total_score для ВСЕХ участков.
+    Вызывается в фоне при изменении инфраструктурных коллекций.
+    """
+    cursor = db[COL_PLOTS].find({}, {"geo_location": 1, "feature_score": 1, "price_per_sotka": 1})
+    updated = 0
+    async for doc in cursor:
+        geo = doc.get("geo_location")
+        if not geo or "coordinates" not in geo:
+            continue
+        coords = geo["coordinates"]
+        lon, lat = coords[0], coords[1]
+        try:
+            geo_data = await compute_distances(db, lat, lon)
+            total = compute_total_score(
+                infra_score=geo_data["infra_score"],
+                negative_score=geo_data["negative_score"],
+                feature_score=doc.get("feature_score", 0),
+                price_per_sotka=doc.get("price_per_sotka"),
+            )
+            await db[COL_PLOTS].update_one(
+                {"_id": doc["_id"]},
+                {"$set": {
+                    "infra_score": geo_data["infra_score"],
+                    "negative_score": geo_data["negative_score"],
+                    "total_score": total,
+                }},
+            )
+            updated += 1
+        except Exception as exc:
+            logger.warning("recalculate_all_scores: skip %s — %s", doc["_id"], exc)
+    logger.info("recalculate_all_scores: updated %d plots", updated)
+    return updated
 
 
 def compute_total_score(
