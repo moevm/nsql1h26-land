@@ -9,7 +9,6 @@ import FilterPanel, { type FormState } from '../components/FilterPanel';
 import { PageHeader } from '../components/PageHeader';
 import { usePlotsListQuery, usePrefetchPlotDetail, usePrefetchPlotsListPage } from '../features/plots/hooks';
 import { useUserPrefsStore } from '../stores/userPrefsStore';
-import { useDebounce } from '../hooks/useDebounce';
 import { Button, Input } from '../components/ui';
 
 function PlotCard({
@@ -315,14 +314,13 @@ export default function PlotsList() {
   const activeFilterCount = Object.values(filters).filter((value) => value !== undefined && value !== '').length;
 
   const [searchQuery, setSearchQuery] = useState(queryParam);
-  const debouncedSearchQuery = useDebounce(searchQuery, 350);
   const [showFilters, setShowFilters] = useState(false);
 
   useEffect(() => {
     setSearchQuery(queryParam);
   }, [queryParam]);
 
-  const applySearchQuery = useCallback((rawQuery: string, replace = false) => {
+  const applySearchQuery = useCallback((rawQuery: string) => {
     const nextQuery = rawQuery.trim();
     if (nextQuery === queryParam) return;
 
@@ -341,12 +339,8 @@ export default function PlotsList() {
       }
 
       return params;
-    }, { replace });
+    });
   }, [queryParam, setSearchParams]);
-
-  useEffect(() => {
-    applySearchQuery(debouncedSearchQuery, true);
-  }, [debouncedSearchQuery, applySearchQuery]);
 
   const plotsQuery = usePlotsListQuery({
     page: currentPage,

@@ -32,30 +32,7 @@
   --motion-duration: 360ms;
   --motion-ease: cubic-bezier(0.22, 1, 0.36, 1);
   --motion-stagger-step: 56ms;
-}
-
-:root[data-theme='light'] {
-  --c-bg: #e8eef5;
-  --c-surface: #f4f8fc;
-  --c-surface-hover: #ebf2fa;
-  --c-card: #ffffff;
-  --c-border: #c5d2e2;
-  --c-border-light: #a9bfd6;
-  --c-text: #1f3247;
-  --c-text-muted: #3f5a74;
-  --c-text-dim: #637d97;
-  --c-heading: #112338;
-  --c-accent: #c5742a;
-  --c-accent-hover: #da8a43;
-  --c-accent-dim: rgba(197, 116, 42, 0.16);
-  --c-green: #2e9f87;
-  --c-green-dim: rgba(46, 159, 135, 0.14);
-  --c-red: #bc4f57;
-  --c-red-dim: rgba(188, 79, 87, 0.15);
-  --c-yellow: #b78a1a;
-  --c-yellow-dim: rgba(183, 138, 26, 0.16);
-  --c-blue: #2b74d8;
-  --c-blue-dim: rgba(43, 116, 216, 0.14);
+  color-scheme: dark;
 }
 
 * {

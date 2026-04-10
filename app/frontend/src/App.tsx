@@ -8,11 +8,8 @@ import {
   LogIn,
   LogOut,
   Map,
-  Monitor,
-  Moon,
   PlusSquare,
   Shield,
-  Sun,
   User,
 } from 'lucide-react';
 import { Link, NavLink, Route, Routes, useLocation } from 'react-router-dom';
@@ -21,7 +18,6 @@ import ErrorBoundary from './components/ErrorBoundary';
 import { PageTransition } from './components/common/PageTransition';
 import { RouteSkeleton } from './components/common/RouteSkeleton';
 import { useAuth } from './contexts/AuthContext';
-import { useThemeSync } from './hooks/useThemeSync';
 import { cn } from './lib/cn';
 import { useUserPrefsStore } from './stores/userPrefsStore';
 
@@ -47,7 +43,6 @@ type NavItem = {
 export default function App() {
   const location = useLocation();
   const { user, logout, isAdmin } = useAuth();
-  const { resolvedTheme, toggleTheme, setThemePreference, isSystemTheme } = useThemeSync();
   const compareCount = useUserPrefsStore((state) => state.comparePlotIds.length);
   const compareLabel = compareCount ? `Сравнение (${compareCount})` : 'Сравнение';
 
@@ -79,7 +74,7 @@ export default function App() {
 
       <header className="app-header sticky top-0 z-50 backdrop-blur-xl">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-10">
-          <div className="flex items-center justify-between gap-3 h-16">
+          <div className="flex items-center justify-between gap-2 min-h-16 py-2 flex-wrap">
             <Link to="/" className="flex items-center gap-3 no-underline shrink-0">
               <span className="app-brand-mark">ЗУ</span>
               <span
@@ -94,8 +89,8 @@ export default function App() {
               </span>
             </Link>
 
-            <div className="flex items-center min-w-0 flex-1 justify-end">
-              <nav className="flex items-center gap-1 overflow-x-auto max-w-full py-1" aria-label="Основная навигация">
+            <div className="flex items-center gap-2 min-w-0 flex-1 justify-end flex-wrap">
+              <nav className="flex items-center gap-1 flex-wrap justify-end" aria-label="Основная навигация">
                 {navLinks
                   .filter((item) => item.show)
                   .map((item) => (
@@ -103,72 +98,46 @@ export default function App() {
                       key={item.to}
                       to={item.to}
                       end={item.end}
-                      className={({ isActive }) => cn('app-nav-link whitespace-nowrap', isActive && 'active')}
+                      className={({ isActive }) => cn('app-nav-link', isActive && 'active')}
                     >
                       <item.Icon size={15} className="opacity-75" />
                       <span>{item.label}</span>
                     </NavLink>
                   ))}
+              </nav>
 
-                <div className="flex items-center gap-1 ml-1">
-                  <button
-                    type="button"
-                    className="btn-ghost px-2! py-1.5!"
-                    onClick={toggleTheme}
-                    title={resolvedTheme === 'dark' ? 'Включить светлую тему' : 'Включить темную тему'}
-                    aria-label={resolvedTheme === 'dark' ? 'Включить светлую тему' : 'Включить темную тему'}
-                  >
-                    {resolvedTheme === 'dark' ? <Sun size={15} /> : <Moon size={15} />}
-                  </button>
-                  <button
-                    type="button"
-                    className="btn-ghost px-2! py-1.5!"
-                    onClick={() => setThemePreference('system')}
-                    title="Системная тема"
-                    aria-label="Системная тема"
-                    aria-pressed={isSystemTheme}
+              {user ? (
+                <div className="flex items-center gap-2">
+                  <span
+                    className="app-user-chip inline-flex items-center gap-1.5"
                     style={{
-                      color: isSystemTheme ? 'var(--c-accent)' : 'var(--c-text-muted)',
-                      borderColor: isSystemTheme ? 'var(--c-accent)' : 'var(--c-border)',
+                      background: isAdmin ? 'var(--c-accent-dim)' : 'var(--c-blue-dim)',
+                      color: isAdmin ? 'var(--c-accent)' : 'var(--c-blue)',
                     }}
                   >
-                    <Monitor size={15} />
+                    {isAdmin ? <Shield size={12} /> : <User size={12} />}
+                    {user.username}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={logout}
+                    className="btn-ghost px-2! py-1.5!"
+                    style={{
+                      color: 'var(--c-text-muted)',
+                      borderColor: 'var(--c-border)',
+                    }}
+                    title="Выйти"
+                    aria-label="Выйти из аккаунта"
+                  >
+                    <LogOut size={15} />
                   </button>
                 </div>
-
-                {user ? (
-                  <div className="flex items-center gap-2 ml-2 pl-2 sm:ml-3 sm:pl-3 border-l" style={{ borderColor: 'var(--c-border)' }}>
-                    <span
-                      className="app-user-chip inline-flex items-center gap-1.5"
-                      style={{
-                        background: isAdmin ? 'var(--c-accent-dim)' : 'var(--c-blue-dim)',
-                        color: isAdmin ? 'var(--c-accent)' : 'var(--c-blue)',
-                      }}
-                    >
-                      {isAdmin ? <Shield size={12} /> : <User size={12} />}
-                      {user.username}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={logout}
-                      className="btn-ghost px-2! py-1.5!"
-                      style={{
-                        color: 'var(--c-text-muted)',
-                        borderColor: 'var(--c-border)',
-                      }}
-                      title="Выйти"
-                      aria-label="Выйти из аккаунта"
-                    >
-                      <LogOut size={15} />
-                    </button>
-                  </div>
-                ) : (
-                  <NavLink to="/login" className="app-nav-link ml-2 pl-2 sm:ml-3 sm:pl-3 border-l" style={{ borderColor: 'var(--c-border)' }}>
-                    <LogIn size={15} />
-                    <span>Войти</span>
-                  </NavLink>
-                )}
-              </nav>
+              ) : (
+                <NavLink to="/login" className="app-nav-link">
+                  <LogIn size={15} />
+                  <span>Войти</span>
+                </NavLink>
+              )}
             </div>
           </div>
         </div>
