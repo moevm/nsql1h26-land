@@ -10,7 +10,7 @@ import jwt
 from bson import ObjectId
 from fastapi import Depends, HTTPException, Request
 
-from config import JWT_SECRET, JWT_ALGORITHM, JWT_EXPIRE_HOURS, COL_USERS
+from config import JWT_SECRET, JWT_ALGORITHM, JWT_EXPIRE_HOURS, COL_USERS, PASSWORD_SALT
 from database import get_db, get_user_repo
 
 logger = logging.getLogger(__name__)

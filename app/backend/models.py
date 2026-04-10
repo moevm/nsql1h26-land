@@ -88,6 +88,8 @@ class PlotOut(BaseModel):
     updated_at: Optional[datetime] = None
     owner_id: Optional[str] = None
     owner_name: Optional[str] = None
+    combined_score: Optional[float] = None
+    jina_score: Optional[float] = None
 
     class Config:
         populate_by_name = True

@@ -31,6 +31,18 @@ from config import (
 
 logger = logging.getLogger(__name__)
 
+_NUMERIC_SORT_FIELDS = {
+    "price",
+    "area_sotki",
+    "total_score",
+    "price_per_sotka",
+    "infra_score",
+    "negative_score",
+    "feature_score",
+    "combined_score",
+    "jina_score",
+}
+
 # --------------- BM25 helpers ---------------
 
 def _tokenize_ru(text: str) -> list[str]:
@@ -182,6 +194,80 @@ def _apply_threshold(results: list[dict], threshold: float) -> list[dict]:
     return [r for r in results if r.get("jina_score", 1.0) >= threshold]
 
 
+def _default_sort_value(sort_field: str):
+    if sort_field in _NUMERIC_SORT_FIELDS:
+        return float("-inf")
+    if sort_field == "created_at":
+        return 0.0
+    return ""
+
+
+def _extract_sort_value(item: dict, sort_field: str):
+    value = item.get(sort_field)
+    if value is None:
+        return _default_sort_value(sort_field)
+
+    if sort_field == "created_at":
+        if hasattr(value, "timestamp"):
+            return value.timestamp()
+        return str(value)
+
+    if sort_field in _NUMERIC_SORT_FIELDS:
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return float("-inf")
+
+    return str(value).lower()
+
+
+def _sort_results(results: list[dict], sort_field: str, sort_order: str) -> list[dict]:
+    """Сортирует результаты по полю каталога или по релевантности."""
+    if not results:
+        return []
+
+    reverse = sort_order == "desc"
+    if sort_field == "relevance":
+        if reverse:
+            return list(results)
+        return list(reversed(results))
+
+    return sorted(results, key=lambda item: _extract_sort_value(item, sort_field), reverse=reverse)
+
+
+def _build_mongo_filters(filters: dict | None) -> dict:
+    payload = filters or {}
+    mongo_filters: dict = {}
+
+    def _apply_range(field: str, min_key: str, max_key: str):
+        min_value = payload.get(min_key)
+        max_value = payload.get(max_key)
+        if min_value is None and max_value is None:
+            return
+        mongo_filters[field] = {}
+        if min_value is not None:
+            mongo_filters[field]["$gte"] = min_value
+        if max_value is not None:
+            mongo_filters[field]["$lte"] = max_value
+
+    _apply_range("price", "min_price", "max_price")
+    _apply_range("area_sotki", "min_area", "max_area")
+    _apply_range("price_per_sotka", "min_price_per_sotka", "max_price_per_sotka")
+
+    if payload.get("min_score") is not None:
+        mongo_filters["total_score"] = {"$gte": payload["min_score"]}
+    if payload.get("min_infra") is not None:
+        mongo_filters["infra_score"] = {"$gte": payload["min_infra"]}
+    if payload.get("min_feature") is not None:
+        mongo_filters["feature_score"] = {"$gte": payload["min_feature"]}
+
+    location = payload.get("location")
+    if isinstance(location, str) and location.strip():
+        mongo_filters["location"] = {"$regex": location.strip(), "$options": "i"}
+
+    return mongo_filters
+
+
 # --------------- Main search ---------------
 
 async def search_plots(
@@ -189,36 +275,27 @@ async def search_plots(
     query: str,
     page: int = 1,
     page_size: int = SEARCH_JINA_TOP_N,
-    min_price: float | None = None,
-    max_price: float | None = None,
-    min_area: float | None = None,
-    max_area: float | None = None,
+    filters: dict | None = None,
+    sort_field: str = "relevance",
+    sort_order: str = "desc",
 ) -> tuple[list[dict], int, bool]:
     """
     Поисковый пайплайн: BM25 + feature scoring → Jina Reranker.
     Возвращает (page_items, total_cached, can_expand=False).
     """
-    mongo_filters: dict = {}
-    if min_price is not None:
-        mongo_filters["price"] = {"$gte": min_price}
-    if max_price is not None:
-        mongo_filters.setdefault("price", {})["$lte"] = max_price
-    if min_area is not None:
-        mongo_filters["area_sotki"] = {"$gte": min_area}
-    if max_area is not None:
-        mongo_filters.setdefault("area_sotki", {})["$lte"] = max_area
+    mongo_filters = _build_mongo_filters(filters)
 
     key = _cache_key(query, mongo_filters)
     offset = (page - 1) * page_size
-    needed = offset + page_size
     now = time.time()
 
     _evict_expired()
 
     entry = _search_cache.get(key)
-    if entry is not None and (now - entry.timestamp) < CACHE_TTL and len(entry.results) >= needed:
-        total = len(entry.results)
-        return entry.results[offset:offset + page_size], total, False
+    if entry is not None and (now - entry.timestamp) < CACHE_TTL:
+        sorted_results = _sort_results(entry.results, sort_field, sort_order)
+        total = len(sorted_results)
+        return sorted_results[offset:offset + page_size], total, False
 
     # 1. Загружаем кандидатов из БД
     repo = PlotRepository(db)
@@ -240,5 +317,6 @@ async def search_plots(
 
     _search_cache[key] = _CacheEntry(results=reranked, timestamp=now)
 
-    total = len(reranked)
-    return reranked[offset:offset + page_size], total, False
+    sorted_results = _sort_results(reranked, sort_field, sort_order)
+    total = len(sorted_results)
+    return sorted_results[offset:offset + page_size], total, False

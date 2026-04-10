@@ -101,7 +101,7 @@ async def seed_admin():
     repo = get_user_repo()
     count = await repo.count()
     if count == 0:
-        pw_hash, salt = hash_password("admin")
+        pw_hash = hash_password("admin")
         await repo.insert_one({
             "username": "admin",
             "password_hash": pw_hash,

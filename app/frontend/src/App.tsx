@@ -7,7 +7,6 @@ const PlotsList = lazy(() => import('./pages/PlotsList'));
 const PlotDetail = lazy(() => import('./pages/PlotDetail'));
 const AddPlot = lazy(() => import('./pages/AddPlot'));
 const EditPlot = lazy(() => import('./pages/EditPlot'));
-const SearchResults = lazy(() => import('./pages/SearchResults'));
 const AdminPanel = lazy(() => import('./pages/AdminPanel'));
 const PlotsMap = lazy(() => import('./pages/PlotsMap'));
 const LoginPage = lazy(() => import('./pages/LoginPage'));
@@ -157,7 +156,7 @@ export default function App() {
           <Route path="/plots/:id/edit" element={<EditPlot />} />
           <Route path="/add" element={<AddPlot />} />
           <Route path="/my" element={<MyPlots />} />
-          <Route path="/search" element={<SearchResults />} />
+          <Route path="/search" element={<PlotsList />} />
           <Route path="/admin" element={<AdminPanel />} />
           <Route path="/login" element={<LoginPage />} />
         </Routes>

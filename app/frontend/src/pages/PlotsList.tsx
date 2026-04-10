@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, memo } from 'react';
-import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { ArrowDown, ArrowUp, SlidersHorizontal } from 'lucide-react';
 import { fetchPlots, type Plot, type PlotsListResponse, type PlotFilters } from '../api';
 import { formatPrice, getErrorMessage } from '../utils';
@@ -10,7 +10,7 @@ import { getCached, setCache } from '../cache';
 
 const LIST_CACHE_TTL = 600_000; // 10 min
 
-function PlotCard({ plot, index }: { readonly plot: Plot; readonly index: number }) {
+function PlotCard({ plot, index, semanticMode }: { readonly plot: Plot; readonly index: number; readonly semanticMode: boolean }) {
   return (
     <Link
       to={`/plots/${plot._id}`}
@@ -102,6 +102,32 @@ function PlotCard({ plot, index }: { readonly plot: Plot; readonly index: number
               {s.l} {(s.v * 100).toFixed(0)}
             </span>
           ))}
+          {semanticMode && plot.jina_score != null && (
+            <span
+              className="text-xs px-2 py-0.5 rounded-md"
+              style={{
+                background: 'var(--c-blue-dim)',
+                color: 'var(--c-blue)',
+                fontFamily: 'var(--font-mono)',
+                fontSize: '0.65rem',
+              }}
+            >
+              J {(plot.jina_score * 100).toFixed(0)}
+            </span>
+          )}
+          {semanticMode && plot.combined_score != null && (
+            <span
+              className="text-xs px-2 py-0.5 rounded-md"
+              style={{
+                background: 'var(--c-green-dim)',
+                color: 'var(--c-green)',
+                fontFamily: 'var(--font-mono)',
+                fontSize: '0.65rem',
+              }}
+            >
+              C {(plot.combined_score * 100).toFixed(0)}
+            </span>
+          )}
         </div>
       </div>
     </Link>
@@ -111,15 +137,20 @@ function PlotCard({ plot, index }: { readonly plot: Plot; readonly index: number
 const MemoPlotCard = memo(PlotCard);
 
 export default function PlotsList() {
-  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
 
+  const queryParam = searchParams.get('q') || '';
   const currentPage = Number(searchParams.get('page') || '1');
-  const sortField = searchParams.get('sort') || 'created_at';
+  const sortParam = searchParams.get('sort');
+  const defaultSortField = queryParam ? 'relevance' : 'created_at';
+  const sortField =
+    sortParam === 'relevance' && !queryParam
+      ? 'created_at'
+      : (sortParam || defaultSortField);
   const sortOrder = searchParams.get('order') || 'desc';
 
   const [data, setData] = useState<PlotsListResponse | null>(null);
-  const [searchQuery, setSearchQuery] = useState('');
+  const [searchQuery, setSearchQuery] = useState(queryParam);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [showFilters, setShowFilters] = useState(false);
@@ -164,7 +195,11 @@ export default function PlotsList() {
   }, [getFilterFromParams]);
 
   useEffect(() => {
-    const cacheKey = `plots:${currentPage}:${sortField}:${sortOrder}:${JSON.stringify(filters)}`;
+    setSearchQuery(queryParam);
+  }, [queryParam]);
+
+  useEffect(() => {
+    const cacheKey = `plots:${currentPage}:${sortField}:${sortOrder}:${queryParam}:${JSON.stringify(filters)}`;
     const cached = getCached<PlotsListResponse>(cacheKey, LIST_CACHE_TTL);
     if (cached) {
       setData(cached);
@@ -173,7 +208,7 @@ export default function PlotsList() {
     }
     const controller = new AbortController();
     setLoading(true);
-    fetchPlots(currentPage, 20, sortField, sortOrder, filters, controller.signal)
+    fetchPlots(currentPage, 20, sortField, sortOrder, filters, queryParam, controller.signal)
       .then((result) => {
         setData(result);
         setCache(cacheKey, result);
@@ -185,13 +220,25 @@ export default function PlotsList() {
         if (!controller.signal.aborted) setLoading(false);
       });
     return () => controller.abort();
-  }, [currentPage, sortField, sortOrder, filters]);
+  }, [currentPage, sortField, sortOrder, filters, queryParam]);
 
   function handleSearch(e: React.FormEvent) {
     e.preventDefault();
-    if (searchQuery.trim()) {
-      navigate(`/search?q=${encodeURIComponent(searchQuery.trim())}`);
+    const params = new URLSearchParams(searchParams);
+    const nextQuery = searchQuery.trim();
+    params.set('page', '1');
+
+    if (nextQuery) {
+      params.set('q', nextQuery);
+    } else {
+      params.delete('q');
+      if (params.get('sort') === 'relevance') {
+        params.delete('sort');
+        params.delete('order');
+      }
     }
+
+    setSearchParams(params);
   }
 
   function applyFiltersFromForm(form: FormState) {
@@ -215,8 +262,14 @@ export default function PlotsList() {
 
   function clearFilters() {
     const params = new URLSearchParams();
-    if (searchParams.get('sort')) params.set('sort', searchParams.get('sort')!);
-    if (searchParams.get('order')) params.set('order', searchParams.get('order')!);
+    const q = searchParams.get('q');
+    const sort = searchParams.get('sort');
+    const order = searchParams.get('order');
+
+    if (q) params.set('q', q);
+    if (sort && !(sort === 'relevance' && !q)) params.set('sort', sort);
+    if (order && !(sort === 'relevance' && !q)) params.set('order', order);
+
     setSearchParams(params);
     setFormFilters({ min_price: '', max_price: '', min_area: '', max_area: '', min_pps: '', max_pps: '', min_score: '', min_infra: '', min_feature: '', location: '' });
     setShowFilters(false);
@@ -229,6 +282,8 @@ export default function PlotsList() {
   }
 
   function changeSort(field: string) {
+    if (field === 'relevance' && !queryParam) return;
+
     const params = new URLSearchParams(searchParams);
     if (sortField === field) {
       params.set('order', sortOrder === 'desc' ? 'asc' : 'desc');
@@ -273,12 +328,35 @@ export default function PlotsList() {
         </div>
       </form>
 
+      {queryParam && (
+        <div className="mb-4 flex items-center gap-3 text-xs" style={{ color: 'var(--c-text-dim)', fontFamily: 'var(--font-mono)' }}>
+          <span>Семантический запрос: «{queryParam}»</span>
+          <button
+            onClick={() => {
+              const params = new URLSearchParams(searchParams);
+              params.delete('q');
+              params.set('page', '1');
+              if (params.get('sort') === 'relevance') {
+                params.delete('sort');
+                params.delete('order');
+              }
+              setSearchParams(params);
+            }}
+            className="px-2 py-1 rounded-md"
+            style={{ background: 'var(--c-surface)', color: 'var(--c-text-muted)', border: '1px solid var(--c-border)' }}
+          >
+            Очистить запрос
+          </button>
+        </div>
+      )}
+
       {/* Sort + Filter controls */}
       <div className="flex items-center gap-2 mb-4 flex-wrap">
         <span className="text-xs uppercase tracking-wider mr-2" style={{ color: 'var(--c-text-dim)', fontFamily: 'var(--font-mono)' }}>
           Сортировка
         </span>
         {[
+          ...(queryParam ? [{ field: 'relevance', label: 'Релев.' }] : []),
           { field: 'created_at', label: 'Дата' },
           { field: 'price', label: 'Цена' },
           { field: 'area_sotki', label: 'Площадь' },
@@ -356,7 +434,7 @@ export default function PlotsList() {
 
       {data?.items.length === 0 && (
         <p className="text-center py-16" style={{ color: 'var(--c-text-dim)' }}>
-          Нет объявлений
+          {queryParam ? 'Ничего не найдено по запросу' : 'Нет объявлений'}
         </p>
       )}
 
@@ -365,7 +443,7 @@ export default function PlotsList() {
         <>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5 stagger-children">
             {data.items.map((p, i) => (
-              <MemoPlotCard key={p._id} plot={p} index={i} />
+              <MemoPlotCard key={p._id} plot={p} index={i} semanticMode={Boolean(queryParam)} />
             ))}
           </div>
 

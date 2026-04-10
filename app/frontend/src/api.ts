@@ -137,6 +137,7 @@ export async function fetchPlots(
   sort = 'created_at',
   order = 'desc',
   filters: PlotFilters = {},
+  query = '',
   signal?: AbortSignal,
 ): Promise<PlotsListResponse> {
   const params = new URLSearchParams({
@@ -149,6 +150,9 @@ export async function fetchPlots(
     if (v !== undefined && v !== null && v !== '') {
       params.set(k, String(v));
     }
+  }
+  if (query.trim()) {
+    params.set('q', query.trim());
   }
   return fetchJson(`${API_BASE}/plots?${params}`, { signal });
 }

@@ -11,7 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 
 from database import get_db, get_plot_repo
 from config import COL_PLOTS, DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE
-from models import PlotCreate, PlotUpdate, PlotOut, PlotListOut, SearchQuery, SearchResultItem, SearchResultOut
+from models import PlotCreate, PlotUpdate, PlotOut, PlotListOut, SearchResultItem, SearchResultOut
 from services.feature_service import extract_features
 from services.geo_service import compute_distances, compute_total_score
 from services.search_service import search_plots
@@ -22,6 +22,8 @@ router = APIRouter(prefix="/api/plots", tags=["plots"])
 
 _ERR_INVALID_ID = "Invalid ID"
 _ERR_NOT_FOUND = "Plot not found"
+_ORDER_PATTERN = "^(asc|desc)$"
+_SORT_PATTERN = "^(relevance|created_at|price|area_sotki|total_score|price_per_sotka|infra_score|negative_score|feature_score)$"
 
 
 def _get_oid(plot_id: str) -> ObjectId:
@@ -43,12 +45,21 @@ def _build_range_filter(query_filter: dict, field: str, min_val, max_val):
         query_filter[field] = f
 
 
-@router.get("", response_model=PlotListOut)
-async def list_plots(
-    page: int = Query(1, ge=1),
-    page_size: int = Query(DEFAULT_PAGE_SIZE, ge=1, le=MAX_PAGE_SIZE),
-    sort: str = Query("created_at", pattern="^(created_at|price|area_sotki|total_score|price_per_sotka|infra_score|negative_score|feature_score)$"),
-    order: str = Query("desc", pattern="^(asc|desc)$"),
+def _prepare_plot_doc(doc: dict) -> dict:
+    """Нормализует документ для ответа клиенту."""
+    serialized = _serialize(doc)
+    geo = serialized.get("geo_location")
+    if ("lat" not in serialized or "lon" not in serialized) and geo and "coordinates" in geo:
+        coords = geo["coordinates"]
+        serialized.setdefault("lat", coords[1] if len(coords) > 1 else 0)
+        serialized.setdefault("lon", coords[0] if len(coords) > 0 else 0)
+    return serialized
+
+
+def _list_search_params(
+    q: Optional[str] = Query(None),
+    sort: Optional[str] = Query(None, pattern=_SORT_PATTERN),
+    order: str = Query("desc", pattern=_ORDER_PATTERN),
     min_price: Optional[float] = Query(None, ge=0),
     max_price: Optional[float] = Query(None, ge=0),
     min_area: Optional[float] = Query(None, ge=0),
@@ -59,34 +70,131 @@ async def list_plots(
     min_infra: Optional[float] = Query(None, ge=0, le=1),
     min_feature: Optional[float] = Query(None, ge=0),
     location: Optional[str] = Query(None),
+) -> dict:
+    return {
+        "q": q,
+        "sort": sort,
+        "order": order,
+        "min_price": min_price,
+        "max_price": max_price,
+        "min_area": min_area,
+        "max_area": max_area,
+        "min_price_per_sotka": min_price_per_sotka,
+        "max_price_per_sotka": max_price_per_sotka,
+        "min_score": min_score,
+        "min_infra": min_infra,
+        "min_feature": min_feature,
+        "location": location,
+    }
+
+
+def _search_params(
+    q: str = Query(..., min_length=1),
+    sort: Optional[str] = Query(None, pattern=_SORT_PATTERN),
+    order: str = Query("desc", pattern=_ORDER_PATTERN),
+    min_price: Optional[float] = Query(None, ge=0),
+    max_price: Optional[float] = Query(None, ge=0),
+    min_area: Optional[float] = Query(None, ge=0),
+    max_area: Optional[float] = Query(None, ge=0),
+    min_price_per_sotka: Optional[float] = Query(None, ge=0),
+    max_price_per_sotka: Optional[float] = Query(None, ge=0),
+    min_score: Optional[float] = Query(None, ge=0, le=1),
+    min_infra: Optional[float] = Query(None, ge=0, le=1),
+    min_feature: Optional[float] = Query(None, ge=0),
+    location: Optional[str] = Query(None),
+) -> dict:
+    params = _list_search_params(
+        q=q,
+        sort=sort,
+        order=order,
+        min_price=min_price,
+        max_price=max_price,
+        min_area=min_area,
+        max_area=max_area,
+        min_price_per_sotka=min_price_per_sotka,
+        max_price_per_sotka=max_price_per_sotka,
+        min_score=min_score,
+        min_infra=min_infra,
+        min_feature=min_feature,
+        location=location,
+    )
+    return params
+
+
+@router.get("", response_model=PlotListOut)
+async def list_plots(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(DEFAULT_PAGE_SIZE, ge=1, le=MAX_PAGE_SIZE),
+    params: dict = Depends(_list_search_params),
 ):
-    """Список объявлений с пагинацией и фильтрами."""
+    """Список объявлений с пагинацией, фильтрами и опциональным семантическим поиском."""
     repo = get_plot_repo()
+    q = params["q"]
+    sort = params["sort"]
+    order = params["order"]
+    effective_sort = sort or ("relevance" if q and q.strip() else "created_at")
+
+    filters = {
+        "min_price": params["min_price"],
+        "max_price": params["max_price"],
+        "min_area": params["min_area"],
+        "max_area": params["max_area"],
+        "min_price_per_sotka": params["min_price_per_sotka"],
+        "max_price_per_sotka": params["max_price_per_sotka"],
+        "min_score": params["min_score"],
+        "min_infra": params["min_infra"],
+        "min_feature": params["min_feature"],
+        "location": params["location"],
+    }
+
+    if q and q.strip():
+        db = get_db()
+        page_items, total, _ = await search_plots(
+            db,
+            q,
+            page=page,
+            page_size=page_size,
+            filters=filters,
+            sort_field=effective_sort,
+            sort_order=order,
+        )
+        pages = max(1, math.ceil(total / page_size))
+        items = [PlotOut(**_prepare_plot_doc(d)) for d in page_items]
+        return PlotListOut(
+            items=items,
+            total=total,
+            page=page,
+            page_size=page_size,
+            pages=pages,
+        )
 
     # Build filter
     query_filter: dict = {}
-    _build_range_filter(query_filter, "price", min_price, max_price)
-    _build_range_filter(query_filter, "area_sotki", min_area, max_area)
-    _build_range_filter(query_filter, "price_per_sotka", min_price_per_sotka, max_price_per_sotka)
-    _build_range_filter(query_filter, "total_score", min_score, None)
-    _build_range_filter(query_filter, "infra_score", min_infra, None)
-    _build_range_filter(query_filter, "feature_score", min_feature, None)
+    _build_range_filter(query_filter, "price", filters["min_price"], filters["max_price"])
+    _build_range_filter(query_filter, "area_sotki", filters["min_area"], filters["max_area"])
+    _build_range_filter(query_filter, "price_per_sotka", filters["min_price_per_sotka"], filters["max_price_per_sotka"])
+    _build_range_filter(query_filter, "total_score", filters["min_score"], None)
+    _build_range_filter(query_filter, "infra_score", filters["min_infra"], None)
+    _build_range_filter(query_filter, "feature_score", filters["min_feature"], None)
 
-    if location:
-        query_filter["location"] = {"$regex": location, "$options": "i"}
+    if filters["location"]:
+        query_filter["location"] = {"$regex": filters["location"], "$options": "i"}
 
     total = await repo.count(query_filter)
     pages = max(1, math.ceil(total / page_size))
 
+    if effective_sort == "relevance":
+        effective_sort = "created_at"
+
     sort_dir = 1 if order == "asc" else -1
     docs = await repo.find_page(
         query_filter=query_filter,
-        sort_field=sort,
+        sort_field=effective_sort,
         sort_dir=sort_dir,
         skip=(page - 1) * page_size,
         limit=page_size,
     )
-    items = [PlotOut(**_serialize(d)) for d in docs]
+    items = [PlotOut(**_prepare_plot_doc(d)) for d in docs]
 
     return PlotListOut(
         items=items,
@@ -164,13 +272,9 @@ async def my_plots(
 
 @router.get("/search", response_model=SearchResultOut)
 async def search(
-    q: str = Query(..., min_length=1),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
-    min_price: Optional[float] = None,
-    max_price: Optional[float] = None,
-    min_area: Optional[float] = None,
-    max_area: Optional[float] = None,
+    params: dict = Depends(_search_params),
 ):
     """
     Поиск по объявлениям: BM25 + feature scoring + Jina rerank.
@@ -180,26 +284,29 @@ async def search(
     """
     import math
     db = get_db()
+    q = params["q"]
     page_items, total, can_expand = await search_plots(
-        db, q,
+        db,
+        q,
         page=page,
         page_size=page_size,
-        min_price=min_price,
-        max_price=max_price,
-        min_area=min_area,
-        max_area=max_area,
+        filters={
+            "min_price": params["min_price"],
+            "max_price": params["max_price"],
+            "min_area": params["min_area"],
+            "max_area": params["max_area"],
+            "min_price_per_sotka": params["min_price_per_sotka"],
+            "max_price_per_sotka": params["max_price_per_sotka"],
+            "min_score": params["min_score"],
+            "min_infra": params["min_infra"],
+            "min_feature": params["min_feature"],
+            "location": params["location"],
+        },
+        sort_field=params["sort"] or "relevance",
+        sort_order=params["order"],
     )
 
-    items = []
-    for doc in page_items:
-        doc["_id"] = str(doc.get("_id", ""))
-        # Извлекаем lat/lon из geo_location для результатов поиска
-        geo = doc.get("geo_location")
-        if geo and "coordinates" in geo:
-            coords = geo["coordinates"]
-            doc.setdefault("lat", coords[1] if len(coords) > 1 else 0)
-            doc.setdefault("lon", coords[0] if len(coords) > 0 else 0)
-        items.append(SearchResultItem(**doc))
+    items = [SearchResultItem(**_prepare_plot_doc(doc)) for doc in page_items]
 
     pages = math.ceil(total / page_size) if total > 0 else 0
     return SearchResultOut(
