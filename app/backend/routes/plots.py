@@ -2,19 +2,36 @@
 CRUD-маршруты для объявлений (plots) + поиск.
 """
 
-import math
+import statistics
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Annotated, Optional
 
 from bson import ObjectId
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from database import get_db, get_plot_repo
-from config import COL_PLOTS, DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE
-from models import PlotCreate, PlotUpdate, PlotOut, PlotListOut, SearchResultItem, SearchResultOut
+from config import DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE
+from models import (
+    LocationStatsOut,
+    PlotCreate,
+    PlotListOut,
+    PlotOut,
+    PlotUpdate,
+    PriceHistoryPoint,
+)
 from services.feature_service import extract_features
 from services.geo_service import compute_distances, compute_total_score
-from services.search_service import search_plots
+from services.listing_service import (
+    ORDER_PATTERN,
+    SORT_PATTERN,
+    build_plot_filters,
+    build_sort_spec,
+    clamp_page,
+    compute_pages,
+    normalize_order,
+    normalize_sort,
+)
+from services.search_service import invalidate_search_cache, search_plots
 from auth import get_current_user, get_optional_user
 from utils import serialize_doc as _serialize, parse_area as _parse_area
 
@@ -22,27 +39,14 @@ router = APIRouter(prefix="/api/plots", tags=["plots"])
 
 _ERR_INVALID_ID = "Invalid ID"
 _ERR_NOT_FOUND = "Plot not found"
-_ORDER_PATTERN = "^(asc|desc)$"
-_SORT_PATTERN = "^(relevance|created_at|price|area_sotki|total_score|price_per_sotka|infra_score|negative_score|feature_score)$"
 
 
 def _get_oid(plot_id: str) -> ObjectId:
-    """Парсит строку в ObjectId, бросает 404 если невалидно."""
+    """Парсит строку в ObjectId, бросает ValueError если невалидно."""
     try:
         return ObjectId(plot_id)
-    except Exception:
-        raise HTTPException(404, _ERR_INVALID_ID)
-
-
-def _build_range_filter(query_filter: dict, field: str, min_val, max_val):
-    """Добавляет gte/lte фильтр если значения указаны."""
-    f: dict = {}
-    if min_val is not None:
-        f["$gte"] = min_val
-    if max_val is not None:
-        f["$lte"] = max_val
-    if f:
-        query_filter[field] = f
+    except Exception as exc:
+        raise ValueError(_ERR_INVALID_ID) from exc
 
 
 def _prepare_plot_doc(doc: dict) -> dict:
@@ -56,21 +60,56 @@ def _prepare_plot_doc(doc: dict) -> dict:
     return serialized
 
 
+def _make_price_history_entry(price: float) -> dict:
+    return {
+        "price": price,
+        "at": datetime.now(timezone.utc),
+    }
+
+
+def _sync_price_history(existing: dict, updates: dict) -> None:
+    existing_price = existing.get("price")
+    incoming_price = updates.get("price")
+    if incoming_price is None or incoming_price == existing_price:
+        return
+
+    history = list(existing.get("price_history", []))
+    history.append(_make_price_history_entry(float(incoming_price)))
+    updates["price_history"] = history
+
+
+def _extract_existing_coords(existing: dict) -> tuple[float, float]:
+    existing_geo = existing.get("geo_location", {})
+    existing_coords = existing_geo.get("coordinates", [0, 0])
+    existing_lon = existing_coords[0] if len(existing_coords) > 0 else 0
+    existing_lat = existing_coords[1] if len(existing_coords) > 1 else 0
+    return existing_lat, existing_lon
+
+
 def _list_search_params(
-    q: Optional[str] = Query(None),
-    sort: Optional[str] = Query(None, pattern=_SORT_PATTERN),
-    order: str = Query("desc", pattern=_ORDER_PATTERN),
-    min_price: Optional[float] = Query(None, ge=0),
-    max_price: Optional[float] = Query(None, ge=0),
-    min_area: Optional[float] = Query(None, ge=0),
-    max_area: Optional[float] = Query(None, ge=0),
-    min_price_per_sotka: Optional[float] = Query(None, ge=0),
-    max_price_per_sotka: Optional[float] = Query(None, ge=0),
-    min_score: Optional[float] = Query(None, ge=0, le=1),
-    min_infra: Optional[float] = Query(None, ge=0, le=1),
-    min_feature: Optional[float] = Query(None, ge=0),
-    location: Optional[str] = Query(None),
+    q: Annotated[Optional[str], Query()] = None,
+    sort: Annotated[Optional[str], Query(pattern=SORT_PATTERN)] = None,
+    order: Annotated[str, Query(pattern=ORDER_PATTERN)] = "desc",
+    min_price: Annotated[Optional[float], Query(ge=0)] = None,
+    max_price: Annotated[Optional[float], Query(ge=0)] = None,
+    min_area: Annotated[Optional[float], Query(ge=0)] = None,
+    max_area: Annotated[Optional[float], Query(ge=0)] = None,
+    min_price_per_sotka: Annotated[Optional[float], Query(ge=0)] = None,
+    max_price_per_sotka: Annotated[Optional[float], Query(ge=0)] = None,
+    min_score: Annotated[Optional[float], Query(ge=0, le=1)] = None,
+    min_infra: Annotated[Optional[float], Query(ge=0, le=1)] = None,
+    min_feature: Annotated[Optional[float], Query(ge=0, le=1)] = None,
+    location: Annotated[Optional[str], Query()] = None,
 ) -> dict:
+    ranges_to_validate = [
+        (min_price, max_price, "price"),
+        (min_area, max_area, "area"),
+        (min_price_per_sotka, max_price_per_sotka, "price_per_sotka"),
+    ]
+    for min_value, max_value, label in ranges_to_validate:
+        if min_value is not None and max_value is not None and min_value > max_value:
+            raise HTTPException(422, f"Invalid range for {label}: min must be <= max")
+
     return {
         "q": q,
         "sort": sort,
@@ -88,51 +127,19 @@ def _list_search_params(
     }
 
 
-def _search_params(
-    q: str = Query(..., min_length=1),
-    sort: Optional[str] = Query(None, pattern=_SORT_PATTERN),
-    order: str = Query("desc", pattern=_ORDER_PATTERN),
-    min_price: Optional[float] = Query(None, ge=0),
-    max_price: Optional[float] = Query(None, ge=0),
-    min_area: Optional[float] = Query(None, ge=0),
-    max_area: Optional[float] = Query(None, ge=0),
-    min_price_per_sotka: Optional[float] = Query(None, ge=0),
-    max_price_per_sotka: Optional[float] = Query(None, ge=0),
-    min_score: Optional[float] = Query(None, ge=0, le=1),
-    min_infra: Optional[float] = Query(None, ge=0, le=1),
-    min_feature: Optional[float] = Query(None, ge=0),
-    location: Optional[str] = Query(None),
-) -> dict:
-    params = _list_search_params(
-        q=q,
-        sort=sort,
-        order=order,
-        min_price=min_price,
-        max_price=max_price,
-        min_area=min_area,
-        max_area=max_area,
-        min_price_per_sotka=min_price_per_sotka,
-        max_price_per_sotka=max_price_per_sotka,
-        min_score=min_score,
-        min_infra=min_infra,
-        min_feature=min_feature,
-        location=location,
-    )
-    return params
-
-
 @router.get("", response_model=PlotListOut)
 async def list_plots(
-    page: int = Query(1, ge=1),
-    page_size: int = Query(DEFAULT_PAGE_SIZE, ge=1, le=MAX_PAGE_SIZE),
-    params: dict = Depends(_list_search_params),
+    params: Annotated[dict, Depends(_list_search_params)],
+    page: Annotated[int, Query(ge=1)] = 1,
+    page_size: Annotated[int, Query(ge=1, le=MAX_PAGE_SIZE)] = DEFAULT_PAGE_SIZE,
 ):
     """Список объявлений с пагинацией, фильтрами и опциональным семантическим поиском."""
     repo = get_plot_repo()
-    q = params["q"]
+    q = (params["q"] or "").strip()
     sort = params["sort"]
-    order = params["order"]
-    effective_sort = sort or ("relevance" if q and q.strip() else "created_at")
+    order = normalize_order(params["order"])
+    has_query = bool(q)
+    effective_sort = normalize_sort(sort, has_query=has_query)
 
     filters = {
         "min_price": params["min_price"],
@@ -147,9 +154,9 @@ async def list_plots(
         "location": params["location"],
     }
 
-    if q and q.strip():
+    if has_query:
         db = get_db()
-        page_items, total, _ = await search_plots(
+        page_items, total, pages, safe_page = await search_plots(
             db,
             q,
             page=page,
@@ -158,40 +165,25 @@ async def list_plots(
             sort_field=effective_sort,
             sort_order=order,
         )
-        pages = max(1, math.ceil(total / page_size))
         items = [PlotOut(**_prepare_plot_doc(d)) for d in page_items]
         return PlotListOut(
             items=items,
             total=total,
-            page=page,
+            page=safe_page,
             page_size=page_size,
             pages=pages,
+            has_prev=safe_page > 1,
+            has_next=safe_page < pages,
         )
 
-    # Build filter
-    query_filter: dict = {}
-    _build_range_filter(query_filter, "price", filters["min_price"], filters["max_price"])
-    _build_range_filter(query_filter, "area_sotki", filters["min_area"], filters["max_area"])
-    _build_range_filter(query_filter, "price_per_sotka", filters["min_price_per_sotka"], filters["max_price_per_sotka"])
-    _build_range_filter(query_filter, "total_score", filters["min_score"], None)
-    _build_range_filter(query_filter, "infra_score", filters["min_infra"], None)
-    _build_range_filter(query_filter, "feature_score", filters["min_feature"], None)
-
-    if filters["location"]:
-        query_filter["location"] = {"$regex": filters["location"], "$options": "i"}
-
+    query_filter = build_plot_filters(filters)
     total = await repo.count(query_filter)
-    pages = max(1, math.ceil(total / page_size))
-
-    if effective_sort == "relevance":
-        effective_sort = "created_at"
-
-    sort_dir = 1 if order == "asc" else -1
+    pages = compute_pages(total, page_size)
+    safe_page = clamp_page(page, pages)
     docs = await repo.find_page(
         query_filter=query_filter,
-        sort_field=effective_sort,
-        sort_dir=sort_dir,
-        skip=(page - 1) * page_size,
+        sort_fields=build_sort_spec(effective_sort, order),
+        skip=(safe_page - 1) * page_size,
         limit=page_size,
     )
     items = [PlotOut(**_prepare_plot_doc(d)) for d in docs]
@@ -199,16 +191,18 @@ async def list_plots(
     return PlotListOut(
         items=items,
         total=total,
-        page=page,
+        page=safe_page,
         page_size=page_size,
         pages=pages,
+        has_prev=safe_page > 1,
+        has_next=safe_page < pages,
     )
 
 
 @router.get("/map")
 async def get_plots_for_map(
-    page: int = Query(1, ge=1),
-    page_size: int = Query(200, ge=1, le=1000),
+    page: Annotated[int, Query(ge=1)] = 1,
+    page_size: Annotated[int, Query(ge=1, le=5000)] = 1000,
 ):
     """Эндпоинт для карты: возвращает участки постранично с минимальными полями."""
     repo = get_plot_repo()
@@ -218,10 +212,12 @@ async def get_plots_for_map(
         "location": 1, "features_text": 1,
     }
     total = await repo.count()
-    pages = max(1, math.ceil(total / page_size))
+    pages = compute_pages(total, page_size)
+    safe_page = clamp_page(page, pages)
     docs = await repo.find_page(
         projection=projection,
-        skip=(page - 1) * page_size,
+        sort_fields=[("_id", -1)],
+        skip=(safe_page - 1) * page_size,
         limit=page_size,
     )
     items = []
@@ -236,16 +232,19 @@ async def get_plots_for_map(
             d["lat"] = 0
             d["lon"] = 0
         items.append(d)
-    return {"items": items, "total": total, "page": page, "page_size": page_size, "pages": pages}
+    return {"items": items, "total": total, "page": safe_page, "page_size": page_size, "pages": pages}
 
 
 @router.get("/my", response_model=PlotListOut)
 async def my_plots(
-    page: int = Query(1, ge=1),
-    page_size: int = Query(DEFAULT_PAGE_SIZE, ge=1, le=MAX_PAGE_SIZE),
-    sort: str = Query("created_at", pattern="^(created_at|price|area_sotki|total_score)$"),
-    order: str = Query("desc", pattern="^(asc|desc)$"),
-    user: dict = Depends(get_current_user),
+    user: Annotated[dict, Depends(get_current_user)],
+    page: Annotated[int, Query(ge=1)] = 1,
+    page_size: Annotated[int, Query(ge=1, le=MAX_PAGE_SIZE)] = DEFAULT_PAGE_SIZE,
+    sort: Annotated[
+        str,
+        Query(pattern="^(created_at|price|area_sotki|total_score|price_per_sotka|infra_score|feature_score)$"),
+    ] = "created_at",
+    order: Annotated[str, Query(pattern=ORDER_PATTERN)] = "desc",
 ):
     """Объявления текущего пользователя. Админ видит объявления без owner_id."""
     repo = get_plot_repo()
@@ -256,77 +255,109 @@ async def my_plots(
         query_filter = {"owner_id": user["_id"]}
 
     total = await repo.count(query_filter)
-    pages = max(1, math.ceil(total / page_size))
-    sort_dir = 1 if order == "asc" else -1
+    pages = compute_pages(total, page_size)
+    safe_page = clamp_page(page, pages)
+    normalized_sort = normalize_sort(sort, has_query=False)
+    normalized_order = normalize_order(order)
 
     docs = await repo.find_page(
         query_filter=query_filter,
-        sort_field=sort,
-        sort_dir=sort_dir,
-        skip=(page - 1) * page_size,
+        sort_fields=build_sort_spec(normalized_sort, normalized_order),
+        skip=(safe_page - 1) * page_size,
         limit=page_size,
     )
-    items = [PlotOut(**_serialize(d)) for d in docs]
-    return PlotListOut(items=items, total=total, page=page, page_size=page_size, pages=pages)
-
-
-@router.get("/search", response_model=SearchResultOut)
-async def search(
-    page: int = Query(1, ge=1),
-    page_size: int = Query(20, ge=1, le=100),
-    params: dict = Depends(_search_params),
-):
-    """
-    Поиск по объявлениям: BM25 + feature scoring + Jina rerank.
-    Jina считает скоры сразу для ~100 кандидатов, результаты
-    кэшируются в памяти. Повторный вызов Jina только при выходе
-    за пределы кэша.
-    """
-    import math
-    db = get_db()
-    q = params["q"]
-    page_items, total, can_expand = await search_plots(
-        db,
-        q,
-        page=page,
+    items = [PlotOut(**_prepare_plot_doc(d)) for d in docs]
+    return PlotListOut(
+        items=items,
+        total=total,
+        page=safe_page,
         page_size=page_size,
-        filters={
-            "min_price": params["min_price"],
-            "max_price": params["max_price"],
-            "min_area": params["min_area"],
-            "max_area": params["max_area"],
-            "min_price_per_sotka": params["min_price_per_sotka"],
-            "max_price_per_sotka": params["max_price_per_sotka"],
-            "min_score": params["min_score"],
-            "min_infra": params["min_infra"],
-            "min_feature": params["min_feature"],
-            "location": params["location"],
-        },
-        sort_field=params["sort"] or "relevance",
-        sort_order=params["order"],
-    )
-
-    items = [SearchResultItem(**_prepare_plot_doc(doc)) for doc in page_items]
-
-    pages = math.ceil(total / page_size) if total > 0 else 0
-    return SearchResultOut(
-        items=items, total=total, query=q,
-        page=page, page_size=page_size, pages=pages,
-        can_expand=can_expand,
+        pages=pages,
+        has_prev=safe_page > 1,
+        has_next=safe_page < pages,
     )
 
 
-@router.get("/{plot_id}", response_model=PlotOut)
+@router.get(
+    "/stats/location",
+    response_model=LocationStatsOut,
+    responses={400: {"description": "Location is required"}},
+)
+async def get_location_stats(location: Annotated[str, Query(min_length=2)]):
+    """Агрегированная статистика по участкам выбранной локации."""
+    repo = get_plot_repo()
+    normalized = location.strip()
+    if not normalized:
+        raise HTTPException(400, "Location is required")
+
+    query_filter = {"location": {"$regex": normalized, "$options": "i"}}
+    docs = await repo.find_all(
+        query_filter=query_filter,
+        projection={"price_per_sotka": 1, "total_score": 1},
+    )
+
+    prices = [float(doc["price_per_sotka"]) for doc in docs if doc.get("price_per_sotka")]
+    scores = [float(doc["total_score"]) for doc in docs if doc.get("total_score") is not None]
+
+    avg_price = round(sum(prices) / len(prices), 2) if prices else None
+    median_price = round(statistics.median(prices), 2) if prices else None
+    avg_score = round(sum(scores) / len(scores), 4) if scores else None
+
+    return LocationStatsOut(
+        location=normalized,
+        sample_size=len(docs),
+        avg_price_per_sotka=avg_price,
+        median_price_per_sotka=median_price,
+        avg_total_score=avg_score,
+    )
+
+
+@router.get(
+    "/{plot_id}/price-history",
+    response_model=list[PriceHistoryPoint],
+    responses={404: {"description": "Invalid ID or plot not found"}},
+)
+async def get_price_history(plot_id: str):
+    """История изменения цены по объявлению."""
+    repo = get_plot_repo()
+    try:
+        oid = _get_oid(plot_id)
+    except ValueError:
+        raise HTTPException(404, _ERR_INVALID_ID)
+
+    doc = await repo.find_by_id(oid, projection={"price_history": 1})
+    if not doc:
+        raise HTTPException(404, _ERR_NOT_FOUND)
+
+    history = doc.get("price_history", [])
+    normalized = [
+        PriceHistoryPoint(price=float(point["price"]), at=point["at"])
+        for point in history
+        if isinstance(point, dict) and point.get("price") is not None and point.get("at") is not None
+    ]
+    normalized.sort(key=lambda point: point.at)
+    return normalized
+
+
+@router.get(
+    "/{plot_id}",
+    response_model=PlotOut,
+    responses={404: {"description": "Invalid ID or plot not found"}},
+)
 async def get_plot(plot_id: str):
     """Получить одно объявление с аналитикой."""
     repo = get_plot_repo()
-    oid = _get_oid(plot_id)
+    try:
+        oid = _get_oid(plot_id)
+    except ValueError:
+        raise HTTPException(404, _ERR_INVALID_ID)
 
     doc = await repo.find_by_id(oid)
     if not doc:
         raise HTTPException(404, _ERR_NOT_FOUND)
 
-    serialized = _serialize(doc)
+    serialized = _prepare_plot_doc(doc)
+    db = get_db()
     # Вычисляем расстояния в реальном времени
     lat = serialized.get("lat", 0)
     lon = serialized.get("lon", 0)
@@ -338,7 +369,7 @@ async def get_plot(plot_id: str):
 
 
 @router.post("", response_model=PlotOut, status_code=201)
-async def create_plot(data: PlotCreate, user: dict | None = Depends(get_optional_user)):
+async def create_plot(data: PlotCreate, user: Annotated[dict | None, Depends(get_optional_user)]):
     """
     Добавить объявление.
     Автоматически рассчитывает текстовые фичи и расстояния.
@@ -387,21 +418,33 @@ async def create_plot(data: PlotCreate, user: dict | None = Depends(get_optional
         "negative_score": geo_data["negative_score"],
         "total_score": total_score,
         "created_at": datetime.now(timezone.utc),
+        "price_history": [_make_price_history_entry(data.price)] if data.price is not None else [],
         "owner_id": user["_id"] if user else None,
         "owner_name": user["username"] if user else None,
     }
 
     result_id = await repo.insert_one(doc)
     doc["_id"] = str(result_id)
+    invalidate_search_cache()
 
     return PlotOut(**doc)
 
 
-@router.delete("/{plot_id}", status_code=204)
-async def delete_plot(plot_id: str, user: dict = Depends(get_current_user)):
+@router.delete(
+    "/{plot_id}",
+    status_code=204,
+    responses={
+        403: {"description": "User cannot delete this plot"},
+        404: {"description": "Invalid ID or plot not found"},
+    },
+)
+async def delete_plot(plot_id: str, user: Annotated[dict, Depends(get_current_user)]):
     """Удалить объявление. Админ — любое, пользователь — только своё."""
     repo = get_plot_repo()
-    oid = _get_oid(plot_id)
+    try:
+        oid = _get_oid(plot_id)
+    except ValueError:
+        raise HTTPException(404, _ERR_INVALID_ID)
 
     doc = await repo.find_by_id(oid, projection={"owner_id": 1})
     if not doc:
@@ -411,17 +454,33 @@ async def delete_plot(plot_id: str, user: dict = Depends(get_current_user)):
         raise HTTPException(403, "You can only delete your own plots")
 
     await repo.delete_one(oid)
+    invalidate_search_cache()
 
 
-@router.put("/{plot_id}", response_model=PlotOut)
-async def update_plot(plot_id: str, data: PlotUpdate, user: dict = Depends(get_current_user)):
+@router.put(
+    "/{plot_id}",
+    response_model=PlotOut,
+    responses={
+        400: {"description": "No fields to update"},
+        403: {"description": "User cannot edit this plot"},
+        404: {"description": "Invalid ID or plot not found"},
+    },
+)
+async def update_plot(
+    plot_id: str,
+    data: PlotUpdate,
+    user: Annotated[dict, Depends(get_current_user)],
+):
     """
     Обновить объявление. Админ — любое, пользователь — только своё.
     Пересчитывает фичи и расстояния при изменении описания/координат.
     """
     db = get_db()
     repo = get_plot_repo()
-    oid = _get_oid(plot_id)
+    try:
+        oid = _get_oid(plot_id)
+    except ValueError:
+        raise HTTPException(404, _ERR_INVALID_ID)
 
     existing = await repo.find_by_id(oid)
     if not existing:
@@ -436,15 +495,14 @@ async def update_plot(plot_id: str, data: PlotUpdate, user: dict = Depends(get_c
     if not updates:
         raise HTTPException(400, "No fields to update")
 
+    _sync_price_history(existing, updates)
+
     # Determine if we need to recalculate
     title = updates.get("title", existing.get("title", ""))
     description = updates.get("description", existing.get("description", ""))
     geo_ref = updates.get("geo_ref", existing.get("geo_ref", ""))
     # Извлекаем текущие координаты из geo_location
-    existing_geo = existing.get("geo_location", {})
-    existing_coords = existing_geo.get("coordinates", [0, 0])
-    existing_lon = existing_coords[0] if len(existing_coords) > 0 else 0
-    existing_lat = existing_coords[1] if len(existing_coords) > 1 else 0
+    existing_lat, existing_lon = _extract_existing_coords(existing)
     lat = updates.get("lat", existing_lat)
     lon = updates.get("lon", existing_lon)
     price = updates.get("price", existing.get("price", 0))
@@ -493,6 +551,7 @@ async def update_plot(plot_id: str, data: PlotUpdate, user: dict = Depends(get_c
     updates["updated_at"] = datetime.now(timezone.utc)
 
     await repo.update_one(oid, updates)
+    invalidate_search_cache()
 
     doc = await repo.find_by_id(oid)
-    return PlotOut(**_serialize(doc))
+    return PlotOut(**_prepare_plot_doc(doc))

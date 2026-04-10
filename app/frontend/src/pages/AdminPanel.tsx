@@ -3,6 +3,10 @@ import { Download, Upload, RefreshCw, X, Layers, TrainFront, Hospital as Hospita
 import { exportAll, importPlots, importInfra, getStats, clearCollection } from '../api';
 import { getErrorMessage } from '../utils';
 import { useAuth } from '../contexts/AuthContext';
+import { AlertMessage } from '../components/AlertMessage';
+import { PageHeader } from '../components/PageHeader';
+import { SectionTitle } from '../components/SectionTitle';
+import { Button, Surface } from '../components/ui';
 
 export default function AdminPanel() {
   const { user, isAdmin } = useAuth();
@@ -12,22 +16,6 @@ export default function AdminPanel() {
   const [error, setError] = useState('');
   const fileInput = useRef<HTMLInputElement>(null);
   const infraFileInput = useRef<HTMLInputElement>(null);
-
-  if (!user) {
-    return (
-      <div className="text-center py-16">
-        <p style={{ color: 'var(--c-text-dim)' }}>Необходимо войти в систему</p>
-      </div>
-    );
-  }
-
-  if (!isAdmin) {
-    return (
-      <div className="text-center py-16">
-        <p style={{ color: 'var(--c-red)' }}>Доступ только для администраторов</p>
-      </div>
-    );
-  }
 
   async function loadStats() {
     try {
@@ -57,6 +45,16 @@ export default function AdminPanel() {
   function showErr(msg: string) {
     setError(msg);
     setMessage('');
+  }
+
+  function toRecordArray(input: unknown): Array<Record<string, unknown>> {
+    if (!Array.isArray(input)) {
+      throw new Error('Ожидался массив объектов');
+    }
+
+    return input.filter((item): item is Record<string, unknown> => (
+      typeof item === 'object' && item !== null && !Array.isArray(item)
+    ));
   }
 
   async function handleExport() {
@@ -105,7 +103,7 @@ export default function AdminPanel() {
         }
       }
 
-      const result = await importPlots(records);
+      const result = await importPlots(toRecordArray(records));
       showMsg(`Импортировано: ${result.inserted} объявлений`);
       loadStats();
     } catch (e) {
@@ -126,14 +124,14 @@ export default function AdminPanel() {
     try {
       const text = await file.text();
       const json = JSON.parse(text);
-      let totalInserted = 0;
+      let totalReplaced = 0;
       const collections = Object.keys(json);
       for (const col of collections) {
         if (!Array.isArray(json[col])) continue;
-        const result = await importInfra(col, json[col]);
-        totalInserted += result.inserted;
+        const result = await importInfra(col, toRecordArray(json[col]));
+        totalReplaced += result.replaced;
       }
-      showMsg(`Импорт инфраструктуры: ${totalInserted} объектов (${collections.length} коллекций)`);
+      showMsg(`Импорт инфраструктуры: заменено ${totalReplaced} объектов (${collections.length} коллекций)`);
       loadStats();
     } catch (e) {
       showErr(getErrorMessage(e));
@@ -168,60 +166,46 @@ export default function AdminPanel() {
 
   const totalDocs = stats ? Object.values(stats).reduce((a, b) => a + b, 0) : 0;
 
+  if (!user) {
+    return (
+      <div className="text-center py-16">
+        <p style={{ color: 'var(--c-text-dim)' }}>Необходимо войти в систему</p>
+      </div>
+    );
+  }
+
+  if (!isAdmin) {
+    return (
+      <div className="text-center py-16">
+        <p style={{ color: 'var(--c-red)' }}>Доступ только для администраторов</p>
+      </div>
+    );
+  }
+
   return (
     <div className="max-w-3xl mx-auto animate-fade-in-up">
-      <h1
-        className="text-2xl sm:text-3xl font-bold mb-2"
-        style={{ fontFamily: 'var(--font-display)', color: 'var(--c-heading)' }}
-      >
-        Панель данных
-      </h1>
-      <p className="mb-6 text-sm" style={{ color: 'var(--c-text-muted)' }}>
-        Управление коллекциями, импорт и экспорт
-      </p>
+      <PageHeader
+        title="Панель данных"
+        subtitle="Управление коллекциями, импорт и экспорт"
+      />
 
       {/* Alerts */}
-      {message && (
-        <div
-          className="px-4 py-3 rounded-xl mb-5 text-sm animate-fade-in"
-          style={{ background: 'var(--c-green-dim)', color: 'var(--c-green)', border: '1px solid var(--c-green)' }}
-        >
-          {message}
-        </div>
-      )}
-      {error && (
-        <div
-          className="px-4 py-3 rounded-xl mb-5 text-sm animate-fade-in"
-          style={{ background: 'var(--c-red-dim)', color: 'var(--c-red)', border: '1px solid var(--c-red)' }}
-        >
-          {error}
-        </div>
-      )}
+      <AlertMessage message={message} tone="success" className="animate-fade-in" />
+      <AlertMessage message={error} className="animate-fade-in" />
 
       {/* Export / Import */}
-      <div
-        className="rounded-xl p-6 mb-6"
-        style={{ background: 'var(--c-card)', border: '1px solid var(--c-border)' }}
-      >
-        <h2
-          className="text-lg font-semibold mb-5"
-          style={{ fontFamily: 'var(--font-display)', color: 'var(--c-heading)' }}
-        >
-          Экспорт / Импорт
-        </h2>
+      <Surface className="p-6 mb-6">
+        <SectionTitle className="mb-5">Экспорт / Импорт</SectionTitle>
 
-        <button
+        <Button
           onClick={handleExport}
           disabled={loading}
-          className="btn-primary w-full mb-5"
+          className="w-full mb-5"
         >
           {loading ? 'Загрузка...' : <><Download size={16} className="inline-block mr-2" />Экспорт всех данных (JSON)</>}
-        </button>
+        </Button>
 
-        <div
-          className="rounded-xl p-4"
-          style={{ background: 'var(--c-surface)', border: '1px solid var(--c-border)' }}
-        >
+        <Surface className="p-4" style={{ background: 'var(--c-surface)' }}>
           <p className="text-xs uppercase tracking-wide mb-3" style={{ color: 'var(--c-text-dim)', fontFamily: 'var(--font-mono)' }}>
             Импорт объявлений
           </p>
@@ -236,28 +220,27 @@ export default function AdminPanel() {
                 fontFamily: 'var(--font-body)',
               }}
             />
-            <button
+            <Button
               onClick={handleImport}
               disabled={loading}
-              className="btn-ghost text-sm whitespace-nowrap"
+              variant="ghost"
+              size="sm"
+              className="whitespace-nowrap"
               style={{
                 borderColor: 'var(--c-green)',
                 color: 'var(--c-green)',
               }}
             >
               {loading ? '...' : <><Upload size={14} className="inline-block mr-1" />Импорт</>}
-            </button>
+            </Button>
           </div>
           <p className="text-xs mt-3" style={{ color: 'var(--c-text-dim)' }}>
             Поддержка: массив объявлений, объект с ключом «plots» или «data».
             Если фичи уже рассчитаны — повторный расчёт не производится.
           </p>
-        </div>
+        </Surface>
 
-        <div
-          className="rounded-xl p-4 mt-4"
-          style={{ background: 'var(--c-surface)', border: '1px solid var(--c-border)' }}
-        >
+        <Surface className="p-4 mt-4" style={{ background: 'var(--c-surface)' }}>
           <p className="text-xs uppercase tracking-wide mb-3" style={{ color: 'var(--c-text-dim)', fontFamily: 'var(--font-mono)' }}>
             Импорт инфраструктуры
           </p>
@@ -272,52 +255,46 @@ export default function AdminPanel() {
                 fontFamily: 'var(--font-body)',
               }}
             />
-            <button
+            <Button
               onClick={handleImportInfra}
               disabled={loading}
-              className="btn-ghost text-sm whitespace-nowrap"
+              variant="ghost"
+              size="sm"
+              className="whitespace-nowrap"
               style={{
                 borderColor: 'var(--c-blue)',
                 color: 'var(--c-blue)',
               }}
             >
               {loading ? '...' : <><Upload size={14} className="inline-block mr-1" />Импорт</>}
-            </button>
+            </Button>
           </div>
           <p className="text-xs mt-3" style={{ color: 'var(--c-text-dim)' }}>
             JSON с ключами-коллекциями: metro_stations, hospitals, schools и т.д.
             Каждая коллекция полностью заменяется.
           </p>
-        </div>
-      </div>
+        </Surface>
+      </Surface>
 
       {/* Stats */}
-      <div
-        className="rounded-xl p-6"
-        style={{ background: 'var(--c-card)', border: '1px solid var(--c-border)' }}
-      >
+      <Surface className="p-6">
         <div className="flex items-center justify-between mb-5">
-          <h2
-            className="text-lg font-semibold"
-            style={{ fontFamily: 'var(--font-display)', color: 'var(--c-heading)' }}
-          >
-            Коллекции
-          </h2>
+          <SectionTitle>Коллекции</SectionTitle>
           <div className="flex items-center gap-3">
             {stats && (
               <span className="text-xs" style={{ color: 'var(--c-text-dim)', fontFamily: 'var(--font-mono)' }}>
                 {totalDocs} всего
               </span>
             )}
-            <button
+            <Button
               onClick={loadStats}
-              className="text-xs transition-colors"
+              variant="ghost"
+              size="sm"
+              className="text-xs"
               style={{ color: 'var(--c-accent)' }}
-              onMouseEnter={(e) => e.currentTarget.style.color = 'var(--c-accent-hover)'}
-              onMouseLeave={(e) => e.currentTarget.style.color = 'var(--c-accent)'}
             >
               <RefreshCw size={12} className="inline-block mr-1" /> Обновить
-            </button>
+            </Button>
           </div>
         </div>
 
@@ -328,7 +305,7 @@ export default function AdminPanel() {
               return (
                 <div
                   key={col}
-                  className="flex items-center justify-between py-3 px-4 rounded-lg transition-colors duration-200 row-hover"
+                  className="flex items-center justify-between py-3 px-4 rounded-lg row-hover"
                 >
                   <div className="flex items-center gap-3">
                     <span
@@ -353,16 +330,16 @@ export default function AdminPanel() {
                     >
                       {count}
                     </span>
-                    <button
+                    <Button
                       onClick={() => handleClear(col)}
-                      className="text-xs px-2 py-1 rounded-md transition-colors duration-200"
+                      variant="ghost"
+                      size="icon"
+                      className="text-xs px-2 py-1 rounded-md"
                       style={{ color: 'var(--c-red)', background: 'transparent' }}
-                      onMouseEnter={(e) => e.currentTarget.style.background = 'var(--c-red-dim)'}
-                      onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
                       title="Очистить коллекцию"
                     >
                       <X size={14} />
-                    </button>
+                    </Button>
                   </div>
                 </div>
               );
@@ -371,7 +348,7 @@ export default function AdminPanel() {
         ) : (
           <p style={{ color: 'var(--c-text-dim)' }}>Загрузка...</p>
         )}
-      </div>
+      </Surface>
     </div>
   );
 }

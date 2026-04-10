@@ -13,6 +13,8 @@ from config import (
 
 logger = logging.getLogger(__name__)
 
+_INDEX_LOG_TEMPLATE = "Indexes on '%s' ensured"
+
 client: AsyncIOMotorClient | None = None
 db: AsyncIOMotorDatabase | None = None
 
@@ -22,12 +24,16 @@ async def connect():
     global client, db
     client = AsyncIOMotorClient(MONGODB_URI)
     db = client[MONGODB_DB]
+    # Проверяем доступность соединения при старте.
+    await db.command("ping")
     logger.info("Connected to MongoDB: %s / %s", MONGODB_URI, MONGODB_DB)
 
 
 async def disconnect():
     """Закрывает подключение."""
-    global client
+    global client, db
+    if db is not None:
+        await db.command("ping")
     if client:
         client.close()
         logger.info("Disconnected from MongoDB")
@@ -72,22 +78,26 @@ async def ensure_indexes():
     plots = db[COL_PLOTS]
     await plots.create_index([("geo_location", GEOSPHERE)])
     await plots.create_index("avito_id", unique=True, sparse=True)
+    await plots.create_index("created_at")
     await plots.create_index("price")
     await plots.create_index("area_sotki")
+    await plots.create_index("price_per_sotka")
+    await plots.create_index("infra_score")
+    await plots.create_index("feature_score")
     await plots.create_index("total_score")
-    logger.info("Indexes on '%s' ensured", COL_PLOTS)
+    logger.info(_INDEX_LOG_TEMPLATE, COL_PLOTS)
 
     # users
     users = db[COL_USERS]
     await users.create_index("username", unique=True)
-    logger.info("Indexes on '%s' ensured", COL_USERS)
+    logger.info(_INDEX_LOG_TEMPLATE, COL_USERS)
 
     # infrastructure collections
     for col_name in INFRA_COLLECTIONS + [COL_NEGATIVE]:
         col = db[col_name]
         await col.create_index([("location", GEOSPHERE)])
         await col.create_index("name")
-        logger.info("Indexes on '%s' ensured", col_name)
+        logger.info(_INDEX_LOG_TEMPLATE, col_name)
 
 
 async def seed_admin():

@@ -1,7 +1,29 @@
-import { lazy, Suspense } from 'react';
-import { Routes, Route, Link, useLocation } from 'react-router-dom';
-import { LayoutGrid, Map, PlusSquare, Database, LogIn, User, LogOut, Shield, List } from 'lucide-react';
+import { lazy, Suspense, type ComponentType, type ReactNode } from 'react';
+import { AnimatePresence } from 'framer-motion';
+import {
+  Database,
+  GitCompare,
+  LayoutGrid,
+  List,
+  LogIn,
+  LogOut,
+  Map,
+  Monitor,
+  Moon,
+  PlusSquare,
+  Shield,
+  Sun,
+  User,
+} from 'lucide-react';
+import { Link, NavLink, Route, Routes, useLocation } from 'react-router-dom';
+
+import ErrorBoundary from './components/ErrorBoundary';
+import { PageTransition } from './components/common/PageTransition';
+import { RouteSkeleton } from './components/common/RouteSkeleton';
 import { useAuth } from './contexts/AuthContext';
+import { useThemeSync } from './hooks/useThemeSync';
+import { cn } from './lib/cn';
+import { useUserPrefsStore } from './stores/userPrefsStore';
 
 const PlotsList = lazy(() => import('./pages/PlotsList'));
 const PlotDetail = lazy(() => import('./pages/PlotDetail'));
@@ -11,48 +33,57 @@ const AdminPanel = lazy(() => import('./pages/AdminPanel'));
 const PlotsMap = lazy(() => import('./pages/PlotsMap'));
 const LoginPage = lazy(() => import('./pages/LoginPage'));
 const MyPlots = lazy(() => import('./pages/MyPlots'));
+const ComparePlots = lazy(() => import('./pages/ComparePlots'));
+const NotFoundPage = lazy(() => import('./pages/NotFoundPage'));
+
+type NavItem = {
+  to: string;
+  label: string;
+  Icon: ComponentType<{ size?: number; className?: string }>;
+  show: boolean;
+  end?: boolean;
+};
 
 export default function App() {
   const location = useLocation();
   const { user, logout, isAdmin } = useAuth();
+  const { resolvedTheme, toggleTheme, setThemePreference, isSystemTheme } = useThemeSync();
+  const compareCount = useUserPrefsStore((state) => state.comparePlotIds.length);
+  const compareLabel = compareCount ? `Сравнение (${compareCount})` : 'Сравнение';
 
-  const navLinks = [
-    { to: '/', label: 'Каталог', Icon: LayoutGrid, show: true },
+  const withRouteBoundary = (page: ReactNode) => (
+    <ErrorBoundary fullScreen={false} title="Ошибка раздела">
+      <PageTransition>{page}</PageTransition>
+    </ErrorBoundary>
+  );
+
+  const navLinks: NavItem[] = [
+    { to: '/', label: 'Каталог', Icon: LayoutGrid, show: true, end: true },
     { to: '/map', label: 'Карта', Icon: Map, show: true },
-    { to: '/add', label: 'Новый участок', Icon: PlusSquare, show: !!user },
-    { to: '/my', label: 'Мои объявления', Icon: List, show: !!user },
+    {
+      to: '/compare',
+      label: compareLabel,
+      Icon: GitCompare,
+      show: true,
+    },
+    { to: '/add', label: 'Новый участок', Icon: PlusSquare, show: Boolean(user) },
+    { to: '/my', label: 'Мои объявления', Icon: List, show: Boolean(user) },
     { to: '/admin', label: 'Панель данных', Icon: Database, show: isAdmin },
   ];
 
   return (
-    <div className="min-h-screen flex flex-col" style={{ background: 'var(--c-bg)' }}>
-      {/* Header */}
-      <header
-        className="sticky top-0 z-50 backdrop-blur-xl"
-        style={{
-          background: 'rgba(11,15,20,0.82)',
-          borderBottom: '1px solid var(--c-border)',
-        }}
-      >
-        <div className="max-w-7xl mx-auto px-5 sm:px-8 lg:px-10">
-          <div className="flex items-center justify-between h-16">
-            <Link
-              to="/"
-              className="flex items-center gap-3 group"
-              style={{ textDecoration: 'none' }}
-            >
-              <div
-                className="w-9 h-9 rounded-lg flex items-center justify-center text-sm font-bold"
-                style={{
-                  background: 'linear-gradient(135deg, var(--c-accent), #c0915e)',
-                  color: 'var(--c-bg)',
-                  fontFamily: 'var(--font-display)',
-                }}
-              >
-                ЗУ
-              </div>
+    <div className="app-shell min-h-screen flex flex-col">
+      <a href="#main-content" className="skip-link">
+        Перейти к содержимому
+      </a>
+
+      <header className="app-header sticky top-0 z-50 backdrop-blur-xl">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-10">
+          <div className="flex items-center justify-between gap-3 h-16">
+            <Link to="/" className="flex items-center gap-3 no-underline shrink-0">
+              <span className="app-brand-mark">ЗУ</span>
               <span
-                className="text-lg tracking-wide hidden sm:block"
+                className="text-base sm:text-lg tracking-tight hidden sm:inline"
                 style={{
                   fontFamily: 'var(--font-display)',
                   fontWeight: 700,
@@ -63,115 +94,114 @@ export default function App() {
               </span>
             </Link>
 
-            <nav className="flex items-center gap-1">
-              {navLinks.filter(l => l.show).map((l) => {
-                const active =
-                  l.to === '/'
-                    ? location.pathname === '/'
-                    : location.pathname.startsWith(l.to);
-                return (
-                  <Link
-                    key={l.to}
-                    to={l.to}
-                    className="relative px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200"
-                    style={{
-                      color: active ? 'var(--c-accent)' : 'var(--c-text-muted)',
-                      background: active ? 'var(--c-accent-dim)' : 'transparent',
-                      fontFamily: 'var(--font-body)',
-                      fontWeight: active ? 600 : 400,
-                    }}
-                    onMouseEnter={(e) => {
-                      if (!active) {
-                        e.currentTarget.style.color = 'var(--c-text)';
-                        e.currentTarget.style.background = 'var(--c-surface-hover)';
-                      }
-                    }}
-                    onMouseLeave={(e) => {
-                      if (!active) {
-                        e.currentTarget.style.color = 'var(--c-text-muted)';
-                        e.currentTarget.style.background = 'transparent';
-                      }
-                    }}
-                  >
-                    <l.Icon size={15} className="inline-block mr-1.5 opacity-60" />
-                    {l.label}
-                    {active && (
-                      <span
-                        className="absolute bottom-0 left-3 right-3 h-0.5 rounded-full"
-                        style={{ background: 'var(--c-accent)' }}
-                      />
-                    )}
-                  </Link>
-                );
-              })}
+            <div className="flex items-center min-w-0 flex-1 justify-end">
+              <nav className="flex items-center gap-1 overflow-x-auto max-w-full py-1" aria-label="Основная навигация">
+                {navLinks
+                  .filter((item) => item.show)
+                  .map((item) => (
+                    <NavLink
+                      key={item.to}
+                      to={item.to}
+                      end={item.end}
+                      className={({ isActive }) => cn('app-nav-link whitespace-nowrap', isActive && 'active')}
+                    >
+                      <item.Icon size={15} className="opacity-75" />
+                      <span>{item.label}</span>
+                    </NavLink>
+                  ))}
 
-              {/* User menu */}
-              {user ? (
-                <div className="flex items-center gap-2 ml-3 pl-3" style={{ borderLeft: '1px solid var(--c-border)' }}>
-                  <span className="flex items-center gap-1.5 text-xs px-2 py-1 rounded-lg"
-                    style={{
-                      background: isAdmin ? 'var(--c-accent-dim)' : 'var(--c-blue-dim)',
-                      color: isAdmin ? 'var(--c-accent)' : 'var(--c-blue)',
-                      fontFamily: 'var(--font-mono)',
-                    }}>
-                    {isAdmin ? <Shield size={12} /> : <User size={12} />}
-                    {user.username}
-                  </span>
+                <div className="flex items-center gap-1 ml-1">
                   <button
-                    onClick={logout}
-                    className="p-1.5 rounded-lg transition-colors"
-                    style={{ color: 'var(--c-text-dim)' }}
-                    onMouseEnter={(e) => e.currentTarget.style.color = 'var(--c-red)'}
-                    onMouseLeave={(e) => e.currentTarget.style.color = 'var(--c-text-dim)'}
-                    title="Выйти"
+                    type="button"
+                    className="btn-ghost px-2! py-1.5!"
+                    onClick={toggleTheme}
+                    title={resolvedTheme === 'dark' ? 'Включить светлую тему' : 'Включить темную тему'}
+                    aria-label={resolvedTheme === 'dark' ? 'Включить светлую тему' : 'Включить темную тему'}
                   >
-                    <LogOut size={15} />
+                    {resolvedTheme === 'dark' ? <Sun size={15} /> : <Moon size={15} />}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-ghost px-2! py-1.5!"
+                    onClick={() => setThemePreference('system')}
+                    title="Системная тема"
+                    aria-label="Системная тема"
+                    aria-pressed={isSystemTheme}
+                    style={{
+                      color: isSystemTheme ? 'var(--c-accent)' : 'var(--c-text-muted)',
+                      borderColor: isSystemTheme ? 'var(--c-accent)' : 'var(--c-border)',
+                    }}
+                  >
+                    <Monitor size={15} />
                   </button>
                 </div>
-              ) : (
-                <Link
-                  to="/login"
-                  className="flex items-center gap-1.5 ml-3 pl-3 text-sm transition-colors"
-                  style={{
-                    borderLeft: '1px solid var(--c-border)',
-                    color: 'var(--c-text-muted)',
-                  }}
-                  onMouseEnter={(e) => e.currentTarget.style.color = 'var(--c-accent)'}
-                  onMouseLeave={(e) => e.currentTarget.style.color = 'var(--c-text-muted)'}
-                >
-                  <LogIn size={15} /> Войти
-                </Link>
-              )}
-            </nav>
+
+                {user ? (
+                  <div className="flex items-center gap-2 ml-2 pl-2 sm:ml-3 sm:pl-3 border-l" style={{ borderColor: 'var(--c-border)' }}>
+                    <span
+                      className="app-user-chip inline-flex items-center gap-1.5"
+                      style={{
+                        background: isAdmin ? 'var(--c-accent-dim)' : 'var(--c-blue-dim)',
+                        color: isAdmin ? 'var(--c-accent)' : 'var(--c-blue)',
+                      }}
+                    >
+                      {isAdmin ? <Shield size={12} /> : <User size={12} />}
+                      {user.username}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={logout}
+                      className="btn-ghost px-2! py-1.5!"
+                      style={{
+                        color: 'var(--c-text-muted)',
+                        borderColor: 'var(--c-border)',
+                      }}
+                      title="Выйти"
+                      aria-label="Выйти из аккаунта"
+                    >
+                      <LogOut size={15} />
+                    </button>
+                  </div>
+                ) : (
+                  <NavLink to="/login" className="app-nav-link ml-2 pl-2 sm:ml-3 sm:pl-3 border-l" style={{ borderColor: 'var(--c-border)' }}>
+                    <LogIn size={15} />
+                    <span>Войти</span>
+                  </NavLink>
+                )}
+              </nav>
+            </div>
           </div>
         </div>
       </header>
 
-      <main className="flex-1 max-w-7xl mx-auto px-5 sm:px-8 lg:px-10 py-8 w-full">
-        <Suspense fallback={<div className="text-center py-20" style={{ color: 'var(--c-text-muted)' }}>Загрузка…</div>}>
-        <Routes>
-          <Route path="/" element={<PlotsList />} />
-          <Route path="/map" element={<PlotsMap />} />
-          <Route path="/plots/:id" element={<PlotDetail />} />
-          <Route path="/plots/:id/edit" element={<EditPlot />} />
-          <Route path="/add" element={<AddPlot />} />
-          <Route path="/my" element={<MyPlots />} />
-          <Route path="/search" element={<PlotsList />} />
-          <Route path="/admin" element={<AdminPanel />} />
-          <Route path="/login" element={<LoginPage />} />
-        </Routes>
+      <main id="main-content" tabIndex={-1} className="flex-1 max-w-7xl mx-auto px-4 sm:px-6 lg:px-10 py-7 sm:py-8 w-full">
+        <Suspense fallback={<RouteSkeleton />}>
+          <AnimatePresence mode="wait">
+            <Routes location={location} key={location.pathname}>
+              <Route path="/" element={withRouteBoundary(<PlotsList />)} />
+              <Route path="/map" element={withRouteBoundary(<PlotsMap />)} />
+              <Route path="/compare" element={withRouteBoundary(<ComparePlots />)} />
+              <Route path="/plots/:id" element={withRouteBoundary(<PlotDetail />)} />
+              <Route path="/plots/:id/edit" element={withRouteBoundary(<EditPlot />)} />
+              <Route path="/add" element={withRouteBoundary(<AddPlot />)} />
+              <Route path="/my" element={withRouteBoundary(<MyPlots />)} />
+              <Route path="/admin" element={withRouteBoundary(<AdminPanel />)} />
+              <Route path="/login" element={withRouteBoundary(<LoginPage />)} />
+              <Route path="*" element={withRouteBoundary(<NotFoundPage />)} />
+            </Routes>
+          </AnimatePresence>
         </Suspense>
       </main>
 
       <footer
-        className="mt-auto py-6 text-center text-xs tracking-wider"
+        className="mt-auto py-6 text-center text-[11px] tracking-[0.2em]"
         style={{
           color: 'var(--c-text-dim)',
           borderTop: '1px solid var(--c-border)',
           fontFamily: 'var(--font-mono)',
         }}
       >
-        LAND · PLOTS · SERVICE — 2026
+        LAND PLOTS SERVICE 2026
       </footer>
     </div>
   );

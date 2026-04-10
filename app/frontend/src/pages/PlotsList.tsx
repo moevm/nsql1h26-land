@@ -1,33 +1,61 @@
-import { useState, useEffect, useCallback, memo } from 'react';
+import { useState, useEffect, useCallback, useMemo, memo } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { ArrowDown, ArrowUp, SlidersHorizontal } from 'lucide-react';
-import { fetchPlots, type Plot, type PlotsListResponse, type PlotFilters } from '../api';
+import { ArrowDown, ArrowUp, SlidersHorizontal, Heart, GitCompare } from 'lucide-react';
+import { type Plot, type PlotFilters } from '../api';
 import { formatPrice, getErrorMessage } from '../utils';
 import ScoreGauge from '../components/ScoreGauge';
 import Pagination from '../components/Pagination';
 import FilterPanel, { type FormState } from '../components/FilterPanel';
-import { getCached, setCache } from '../cache';
+import { PageHeader } from '../components/PageHeader';
+import { usePlotsListQuery, usePrefetchPlotDetail, usePrefetchPlotsListPage } from '../features/plots/hooks';
+import { useUserPrefsStore } from '../stores/userPrefsStore';
+import { useDebounce } from '../hooks/useDebounce';
+import { Button, Input } from '../components/ui';
 
-const LIST_CACHE_TTL = 600_000; // 10 min
+function PlotCard({
+  plot,
+  index,
+  semanticMode,
+  onPrefetchDetail,
+}: {
+  readonly plot: Plot;
+  readonly index: number;
+  readonly semanticMode: boolean;
+  readonly onPrefetchDetail?: (id: string) => Promise<unknown>;
+}) {
+  const isFavorite = useUserPrefsStore((state) => state.isFavorite(plot._id));
+  const isCompared = useUserPrefsStore((state) => state.isCompared(plot._id));
+  const toggleFavorite = useUserPrefsStore((state) => state.toggleFavorite);
+  const toggleCompare = useUserPrefsStore((state) => state.toggleCompare);
+  const prefetchDetail = () => {
+    if (onPrefetchDetail) {
+      void onPrefetchDetail(plot._id);
+    }
+  };
 
-function PlotCard({ plot, index, semanticMode }: { readonly plot: Plot; readonly index: number; readonly semanticMode: boolean }) {
   return (
-    <Link
-      to={`/plots/${plot._id}`}
-      className="card-hover block rounded-xl overflow-hidden"
+    <article
+      className="card-hover rounded-xl overflow-hidden h-full flex flex-col"
       style={{
         background: 'var(--c-card)',
         border: '1px solid var(--c-border)',
         animationDelay: `${index * 60}ms`,
       }}
     >
+      <Link
+        to={`/plots/${plot._id}`}
+        className="block flex-1 min-h-0"
+        onMouseEnter={prefetchDetail}
+        onFocus={prefetchDetail}
+        onTouchStart={prefetchDetail}
+      >
       {/* Image */}
       {plot.thumbnail ? (
         <div className="relative h-44 overflow-hidden">
           <img
             src={plot.thumbnail}
             alt={plot.title}
-            className="w-full h-full object-cover transition-transform duration-500 hover:scale-105"
+            className="w-full h-full object-cover motion-transform hover:scale-105"
             loading="lazy"
           />
           <div
@@ -52,7 +80,7 @@ function PlotCard({ plot, index, semanticMode }: { readonly plot: Plot; readonly
         </div>
       )}
 
-      <div className="p-4">
+      <div className="p-4 h-full flex flex-col">
         <h3
           className="font-semibold mb-1 line-clamp-2 text-sm leading-snug"
           style={{ color: 'var(--c-heading)', fontFamily: 'var(--font-body)', fontWeight: 600 }}
@@ -63,8 +91,14 @@ function PlotCard({ plot, index, semanticMode }: { readonly plot: Plot; readonly
           {plot.location || plot.address}
         </p>
 
-        <div className="flex items-end justify-between">
-          <div>
+        <div
+          className="mb-3 px-3 py-2.5 rounded-lg"
+          style={{
+            border: '1px solid var(--c-border)',
+            background: 'color-mix(in srgb, var(--c-surface) 88%, transparent)',
+          }}
+        >
+          <div className="flex items-end justify-between gap-2">
             <span
               className="text-lg font-bold"
               style={{ color: 'var(--c-accent)', fontFamily: 'var(--font-mono)' }}
@@ -73,17 +107,22 @@ function PlotCard({ plot, index, semanticMode }: { readonly plot: Plot; readonly
             </span>
             {plot.area_sotki && (
               <span
-                className="ml-2 text-xs"
+                className="text-xs whitespace-nowrap"
                 style={{ color: 'var(--c-text-dim)' }}
               >
                 {plot.area_sotki} сот.
               </span>
             )}
           </div>
+          {plot.price_per_sotka && (
+            <p className="mt-1 text-xs" style={{ color: 'var(--c-text-dim)', fontFamily: 'var(--font-mono)' }}>
+              {formatPrice(plot.price_per_sotka)}/сот.
+            </p>
+          )}
         </div>
 
         {/* Micro-scores row */}
-        <div className="flex gap-2 mt-3">
+        <div className="flex flex-wrap gap-2 mt-auto">
           {[
             { v: plot.infra_score, l: 'И', c: 'var(--c-blue)' },
             { v: plot.negative_score, l: 'Э', c: 'var(--c-green)' },
@@ -130,223 +169,332 @@ function PlotCard({ plot, index, semanticMode }: { readonly plot: Plot; readonly
           )}
         </div>
       </div>
-    </Link>
+
+      </Link>
+
+      <div
+        className="px-4 pb-4 pt-3 grid grid-cols-2 gap-2"
+        style={{ borderTop: '1px solid var(--c-border)' }}
+      >
+        <Button
+          onClick={() => toggleFavorite(plot._id)}
+          variant="ghost"
+          size="sm"
+          className="w-full text-[11px] sm:text-xs px-2.5 py-1.5 rounded-md flex items-center justify-center gap-1.5 whitespace-nowrap"
+          style={{
+            background: isFavorite ? 'var(--c-red-dim)' : 'var(--c-surface)',
+            color: isFavorite ? 'var(--c-red)' : 'var(--c-text-muted)',
+          }}
+          aria-label={isFavorite ? 'Убрать из избранного' : 'Добавить в избранное'}
+        >
+          <Heart size={12} fill={isFavorite ? 'currentColor' : 'none'} />
+          {isFavorite ? 'В избранном' : 'Избранное'}
+        </Button>
+        <Button
+          onClick={() => toggleCompare(plot._id)}
+          variant="ghost"
+          size="sm"
+          className="w-full text-[11px] sm:text-xs px-2.5 py-1.5 rounded-md flex items-center justify-center gap-1.5 whitespace-nowrap"
+          style={{
+            background: isCompared ? 'var(--c-blue-dim)' : 'var(--c-surface)',
+            color: isCompared ? 'var(--c-blue)' : 'var(--c-text-muted)',
+          }}
+          aria-label={isCompared ? 'Убрать из сравнения' : 'Добавить в сравнение'}
+        >
+          <GitCompare size={12} />
+          {isCompared ? 'В сравнении' : 'Сравнение'}
+        </Button>
+      </div>
+    </article>
   );
 }
 
 const MemoPlotCard = memo(PlotCard);
 
+const FILTER_PARAM_KEYS: Array<keyof FormState> = [
+  'min_price',
+  'max_price',
+  'min_area',
+  'max_area',
+  'min_price_per_sotka',
+  'max_price_per_sotka',
+  'min_score',
+  'min_infra',
+  'min_feature',
+  'location',
+];
+
+const SORT_FIELDS = new Set([
+  'relevance',
+  'created_at',
+  'price',
+  'area_sotki',
+  'price_per_sotka',
+  'total_score',
+  'infra_score',
+  'feature_score',
+]);
+
+const ORDER_VALUES = new Set(['asc', 'desc']);
+
+function parsePositiveInt(raw: string | null, fallback: number): number {
+  if (!raw) return fallback;
+  const parsed = Number(raw);
+  if (!Number.isInteger(parsed) || parsed < 1) return fallback;
+  return parsed;
+}
+
+function parseFilterNumber(searchParams: URLSearchParams, key: keyof PlotFilters): number | undefined {
+  const raw = searchParams.get(key);
+  if (!raw) return undefined;
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed)) return undefined;
+  return parsed;
+}
+
+function getFiltersFromSearchParams(searchParams: URLSearchParams): PlotFilters {
+  const location = (searchParams.get('location') ?? '').trim();
+  return {
+    min_price: parseFilterNumber(searchParams, 'min_price'),
+    max_price: parseFilterNumber(searchParams, 'max_price'),
+    min_area: parseFilterNumber(searchParams, 'min_area'),
+    max_area: parseFilterNumber(searchParams, 'max_area'),
+    min_price_per_sotka: parseFilterNumber(searchParams, 'min_price_per_sotka'),
+    max_price_per_sotka: parseFilterNumber(searchParams, 'max_price_per_sotka'),
+    min_score: parseFilterNumber(searchParams, 'min_score'),
+    min_infra: parseFilterNumber(searchParams, 'min_infra'),
+    min_feature: parseFilterNumber(searchParams, 'min_feature'),
+    location: location || undefined,
+  };
+}
+
+function toFormState(filters: PlotFilters): FormState {
+  const toText = (value: number | undefined): string => (
+    typeof value === 'number' && Number.isFinite(value) ? String(value) : ''
+  );
+
+  return {
+    min_price: toText(filters.min_price),
+    max_price: toText(filters.max_price),
+    min_area: toText(filters.min_area),
+    max_area: toText(filters.max_area),
+    min_price_per_sotka: toText(filters.min_price_per_sotka),
+    max_price_per_sotka: toText(filters.max_price_per_sotka),
+    min_score: toText(filters.min_score),
+    min_infra: toText(filters.min_infra),
+    min_feature: toText(filters.min_feature),
+    location: filters.location ?? '',
+  };
+}
+
+function normalizeSort(sortParam: string | null, query: string): string {
+  const hasQuery = query.length > 0;
+  const fallback = hasQuery ? 'relevance' : 'created_at';
+  if (!sortParam || !SORT_FIELDS.has(sortParam)) return fallback;
+  if (sortParam === 'relevance' && !hasQuery) return 'created_at';
+  return sortParam;
+}
+
+function normalizeOrder(orderParam: string | null): 'asc' | 'desc' {
+  return ORDER_VALUES.has(orderParam ?? '') ? (orderParam as 'asc' | 'desc') : 'desc';
+}
+
 export default function PlotsList() {
   const [searchParams, setSearchParams] = useSearchParams();
 
-  const queryParam = searchParams.get('q') || '';
-  const currentPage = Number(searchParams.get('page') || '1');
-  const sortParam = searchParams.get('sort');
-  const defaultSortField = queryParam ? 'relevance' : 'created_at';
-  const sortField =
-    sortParam === 'relevance' && !queryParam
-      ? 'created_at'
-      : (sortParam || defaultSortField);
-  const sortOrder = searchParams.get('order') || 'desc';
+  const queryParam = (searchParams.get('q') ?? '').trim();
+  const currentPage = parsePositiveInt(searchParams.get('page'), 1);
+  const sortField = normalizeSort(searchParams.get('sort'), queryParam);
+  const sortOrder = normalizeOrder(searchParams.get('order'));
 
-  const [data, setData] = useState<PlotsListResponse | null>(null);
+  const filters = useMemo(
+    () => getFiltersFromSearchParams(searchParams),
+    [searchParams],
+  );
+  const formFilters = useMemo(() => toFormState(filters), [filters]);
+  const activeFilterCount = Object.values(filters).filter((value) => value !== undefined && value !== '').length;
+
   const [searchQuery, setSearchQuery] = useState(queryParam);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
+  const debouncedSearchQuery = useDebounce(searchQuery, 350);
   const [showFilters, setShowFilters] = useState(false);
-
-  // Filter state from URL params
-  const getFilterFromParams = useCallback((): PlotFilters => {
-    const f: PlotFilters = {};
-    const num = (k: string) => { const v = searchParams.get(k); return v ? Number(v) : undefined; };
-    f.min_price = num('min_price');
-    f.max_price = num('max_price');
-    f.min_area = num('min_area');
-    f.max_area = num('max_area');
-    f.min_price_per_sotka = num('min_pps');
-    f.max_price_per_sotka = num('max_pps');
-    f.min_score = num('min_score');
-    f.min_infra = num('min_infra');
-    f.min_feature = num('min_feature');
-    f.location = searchParams.get('location') || undefined;
-    return f;
-  }, [searchParams]);
-
-  const [filters, setFilters] = useState<PlotFilters>(getFilterFromParams);
-
-  // Local form state for editing
-  const [formFilters, setFormFilters] = useState<FormState>({
-    min_price: searchParams.get('min_price') || '',
-    max_price: searchParams.get('max_price') || '',
-    min_area: searchParams.get('min_area') || '',
-    max_area: searchParams.get('max_area') || '',
-    min_pps: searchParams.get('min_pps') || '',
-    max_pps: searchParams.get('max_pps') || '',
-    min_score: searchParams.get('min_score') || '',
-    min_infra: searchParams.get('min_infra') || '',
-    min_feature: searchParams.get('min_feature') || '',
-    location: searchParams.get('location') || '',
-  });
-
-  const activeFilterCount = Object.values(filters).filter(v => v !== undefined && v !== '').length;
-
-  useEffect(() => {
-    setFilters(getFilterFromParams());
-  }, [getFilterFromParams]);
 
   useEffect(() => {
     setSearchQuery(queryParam);
   }, [queryParam]);
 
-  useEffect(() => {
-    const cacheKey = `plots:${currentPage}:${sortField}:${sortOrder}:${queryParam}:${JSON.stringify(filters)}`;
-    const cached = getCached<PlotsListResponse>(cacheKey, LIST_CACHE_TTL);
-    if (cached) {
-      setData(cached);
-      setLoading(false);
-      return;
-    }
-    const controller = new AbortController();
-    setLoading(true);
-    fetchPlots(currentPage, 20, sortField, sortOrder, filters, queryParam, controller.signal)
-      .then((result) => {
-        setData(result);
-        setCache(cacheKey, result);
-      })
-      .catch((e) => {
-        if (!controller.signal.aborted) setError(getErrorMessage(e));
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setLoading(false);
-      });
-    return () => controller.abort();
-  }, [currentPage, sortField, sortOrder, filters, queryParam]);
+  const applySearchQuery = useCallback((rawQuery: string, replace = false) => {
+    const nextQuery = rawQuery.trim();
+    if (nextQuery === queryParam) return;
 
-  function handleSearch(e: React.FormEvent) {
-    e.preventDefault();
-    const params = new URLSearchParams(searchParams);
-    const nextQuery = searchQuery.trim();
-    params.set('page', '1');
+    setSearchParams((prev) => {
+      const params = new URLSearchParams(prev);
+      params.set('page', '1');
 
-    if (nextQuery) {
-      params.set('q', nextQuery);
-    } else {
-      params.delete('q');
-      if (params.get('sort') === 'relevance') {
-        params.delete('sort');
-        params.delete('order');
+      if (nextQuery) {
+        params.set('q', nextQuery);
+      } else {
+        params.delete('q');
+        if (params.get('sort') === 'relevance') {
+          params.delete('sort');
+          params.delete('order');
+        }
       }
-    }
 
-    setSearchParams(params);
+      return params;
+    }, { replace });
+  }, [queryParam, setSearchParams]);
+
+  useEffect(() => {
+    applySearchQuery(debouncedSearchQuery, true);
+  }, [debouncedSearchQuery, applySearchQuery]);
+
+  const plotsQuery = usePlotsListQuery({
+    page: currentPage,
+    pageSize: 20,
+    sort: sortField,
+    order: sortOrder,
+    query: queryParam,
+    filters,
+  });
+
+  const data = plotsQuery.data ?? null;
+  const loading = plotsQuery.isLoading;
+  const error = plotsQuery.error ? getErrorMessage(plotsQuery.error) : '';
+  const prefetchPlotDetail = usePrefetchPlotDetail();
+  const prefetchPlotsPage = usePrefetchPlotsListPage({
+    pageSize: 20,
+    sort: sortField,
+    order: sortOrder,
+    query: queryParam,
+    filters,
+  });
+
+  function handleSearch(e: React.SyntheticEvent<HTMLFormElement>) {
+    e.preventDefault();
+    applySearchQuery(searchQuery);
   }
 
   function applyFiltersFromForm(form: FormState) {
-    const params = new URLSearchParams(searchParams);
-    params.set('page', '1');
-    // Clear old filter params
-    ['min_price', 'max_price', 'min_area', 'max_area', 'min_pps', 'max_pps', 'min_score', 'min_infra', 'min_feature', 'location'].forEach(k => params.delete(k));
-    if (form.min_price) params.set('min_price', form.min_price);
-    if (form.max_price) params.set('max_price', form.max_price);
-    if (form.min_area) params.set('min_area', form.min_area);
-    if (form.max_area) params.set('max_area', form.max_area);
-    if (form.min_pps) params.set('min_pps', form.min_pps);
-    if (form.max_pps) params.set('max_pps', form.max_pps);
-    if (form.min_score) params.set('min_score', form.min_score);
-    if (form.min_infra) params.set('min_infra', form.min_infra);
-    if (form.min_feature) params.set('min_feature', form.min_feature);
-    if (form.location) params.set('location', form.location);
-    setSearchParams(params);
+    setSearchParams((prev) => {
+      const params = new URLSearchParams(prev);
+      params.set('page', '1');
+      FILTER_PARAM_KEYS.forEach((key) => params.delete(key));
+
+      const setIfNotEmpty = (key: keyof FormState) => {
+        const value = form[key].trim();
+        if (value) {
+          params.set(key, value);
+        }
+      };
+
+      FILTER_PARAM_KEYS.forEach((key) => setIfNotEmpty(key));
+      return params;
+    });
     setShowFilters(false);
   }
 
   function clearFilters() {
-    const params = new URLSearchParams();
-    const q = searchParams.get('q');
-    const sort = searchParams.get('sort');
-    const order = searchParams.get('order');
+    setSearchParams((prev) => {
+      const params = new URLSearchParams(prev);
+      FILTER_PARAM_KEYS.forEach((key) => params.delete(key));
+      params.set('page', '1');
 
-    if (q) params.set('q', q);
-    if (sort && !(sort === 'relevance' && !q)) params.set('sort', sort);
-    if (order && !(sort === 'relevance' && !q)) params.set('order', order);
+      const q = (params.get('q') ?? '').trim();
+      if (!q && params.get('sort') === 'relevance') {
+        params.delete('sort');
+        params.delete('order');
+      }
 
-    setSearchParams(params);
-    setFormFilters({ min_price: '', max_price: '', min_area: '', max_area: '', min_pps: '', max_pps: '', min_score: '', min_infra: '', min_feature: '', location: '' });
+      return params;
+    });
     setShowFilters(false);
   }
 
-  function changePage(p: number) {
-    const params = new URLSearchParams(searchParams);
-    params.set('page', String(p));
-    setSearchParams(params);
-  }
+  const changePage = useCallback((nextPage: number, replace = false) => {
+    const boundedLow = Math.max(1, Math.floor(nextPage));
+    const bounded = data ? Math.min(boundedLow, Math.max(1, data.pages)) : boundedLow;
+
+    setSearchParams((prev) => {
+      const params = new URLSearchParams(prev);
+      params.set('page', String(bounded));
+      return params;
+    }, { replace });
+  }, [data, setSearchParams]);
+
+  useEffect(() => {
+    if (!data) return;
+    if (currentPage > data.pages) {
+      changePage(data.pages, true);
+    }
+  }, [currentPage, data, changePage]);
+
+  useEffect(() => {
+    if (!data || currentPage >= data.pages) {
+      return;
+    }
+
+    void prefetchPlotsPage(currentPage + 1);
+  }, [currentPage, data, prefetchPlotsPage]);
 
   function changeSort(field: string) {
     if (field === 'relevance' && !queryParam) return;
 
-    const params = new URLSearchParams(searchParams);
-    if (sortField === field) {
-      params.set('order', sortOrder === 'desc' ? 'asc' : 'desc');
-    } else {
-      params.set('sort', field);
-      params.set('order', 'desc');
-    }
-    params.set('page', '1');
-    setSearchParams(params);
+    setSearchParams((prev) => {
+      const params = new URLSearchParams(prev);
+      if (sortField === field) {
+        params.set('order', sortOrder === 'desc' ? 'asc' : 'desc');
+      } else {
+        params.set('sort', field);
+        params.set('order', 'desc');
+      }
+      params.set('page', '1');
+      return params;
+    });
   }
 
   return (
     <div className="animate-fade-in">
       {/* Hero section */}
-      <div className="mb-8">
-        <h1
-          className="text-3xl sm:text-4xl font-bold mb-2"
-          style={{ fontFamily: 'var(--font-display)', color: 'var(--c-heading)' }}
-        >
-          Каталог участков
-        </h1>
-        <p style={{ color: 'var(--c-text-muted)', fontFamily: 'var(--font-body)' }}>
-          Поиск и аналитика земельных участков Санкт-Петербурга и Ленинградской области
-        </p>
-      </div>
+      <PageHeader
+        title="Каталог участков"
+        subtitle="Поиск и аналитика земельных участков Санкт-Петербурга и Ленинградской области"
+        className="mb-8"
+        titleClassName="text-3xl sm:text-4xl"
+        subtitleStyle={{ fontFamily: 'var(--font-body)' }}
+      />
 
       {/* Search bar */}
       <form onSubmit={handleSearch} className="mb-6">
         <div className="flex gap-3">
           <div className="flex-1 relative">
-            <input
+            <Input
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Поиск: тихий участок у воды, ИЖС с коммуникациями..."
-              className="input-field"
+              aria-label="Поисковый запрос"
             />
           </div>
-          <button type="submit" className="btn-primary whitespace-nowrap">
+          <Button type="submit" className="whitespace-nowrap">
             Найти
-          </button>
+          </Button>
         </div>
       </form>
 
       {queryParam && (
         <div className="mb-4 flex items-center gap-3 text-xs" style={{ color: 'var(--c-text-dim)', fontFamily: 'var(--font-mono)' }}>
           <span>Семантический запрос: «{queryParam}»</span>
-          <button
+            <Button
             onClick={() => {
-              const params = new URLSearchParams(searchParams);
-              params.delete('q');
-              params.set('page', '1');
-              if (params.get('sort') === 'relevance') {
-                params.delete('sort');
-                params.delete('order');
-              }
-              setSearchParams(params);
+              applySearchQuery('');
             }}
-            className="px-2 py-1 rounded-md"
+              variant="ghost"
+              size="sm"
+              className="px-2 py-1 rounded-md"
             style={{ background: 'var(--c-surface)', color: 'var(--c-text-muted)', border: '1px solid var(--c-border)' }}
           >
             Очистить запрос
-          </button>
+            </Button>
         </div>
       )}
 
@@ -367,10 +515,12 @@ export default function PlotsList() {
         ].map((s) => {
           const active = sortField === s.field;
           return (
-            <button
+            <Button
               key={s.field}
               onClick={() => changeSort(s.field)}
-              className="px-3 py-1.5 rounded-lg text-xs font-medium transition-all duration-200"
+              variant="ghost"
+              size="sm"
+              className="px-3 py-1.5 rounded-lg text-xs font-medium"
               style={{
                 background: active ? 'var(--c-accent-dim)' : 'var(--c-surface)',
                 color: active ? 'var(--c-accent)' : 'var(--c-text-muted)',
@@ -379,25 +529,34 @@ export default function PlotsList() {
               }}
             >
               {s.label} {active && (sortOrder === 'desc' ? <ArrowDown size={12} className="inline-block ml-0.5" /> : <ArrowUp size={12} className="inline-block ml-0.5" />)}
-            </button>
+            </Button>
           );
         })}
 
         <div className="ml-auto flex items-center gap-3">
-          {data && (
+          {plotsQuery.isFetching && data && (
             <span className="text-xs" style={{ color: 'var(--c-text-dim)', fontFamily: 'var(--font-mono)' }}>
+              Обновление...
+            </span>
+          )}
+          {data && (
+            <span className="text-xs" style={{ color: 'var(--c-text-dim)', fontFamily: 'var(--font-mono)' }} aria-live="polite">
               {data.total} объявлений
             </span>
           )}
-          <button
+          <Button
             onClick={() => setShowFilters(!showFilters)}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all duration-200"
+            variant="ghost"
+            size="sm"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium"
             style={{
               background: activeFilterCount > 0 ? 'var(--c-accent-dim)' : 'var(--c-surface)',
               color: activeFilterCount > 0 ? 'var(--c-accent)' : 'var(--c-text-muted)',
               border: `1px solid ${activeFilterCount > 0 ? 'var(--c-accent)' : 'var(--c-border)'}`,
               fontFamily: 'var(--font-mono)',
             }}
+            aria-expanded={showFilters}
+            aria-controls="plots-filter-panel"
           >
             <SlidersHorizontal size={13} />
             Фильтры
@@ -409,7 +568,7 @@ export default function PlotsList() {
                 {activeFilterCount}
               </span>
             )}
-          </button>
+          </Button>
         </div>
       </div>
 
@@ -417,19 +576,19 @@ export default function PlotsList() {
         visible={showFilters}
         filters={filters}
         initialForm={formFilters}
-        onApply={(form) => { setFormFilters(form); applyFiltersFromForm(form); }}
+        onApply={applyFiltersFromForm}
         onClear={clearFilters}
         onClose={() => setShowFilters(false)}
       />
 
       {/* Loading / Error */}
       {loading && (
-        <p className="text-center py-16" style={{ color: 'var(--c-text-dim)' }}>
+        <p className="text-center py-16" style={{ color: 'var(--c-text-dim)' }} role="status" aria-live="polite">
           Загрузка...
         </p>
       )}
       {error && (
-        <p className="text-center py-16" style={{ color: 'var(--c-red)' }}>{error}</p>
+        <p className="text-center py-16" style={{ color: 'var(--c-red)' }} role="alert">{error}</p>
       )}
 
       {data?.items.length === 0 && (
@@ -443,7 +602,13 @@ export default function PlotsList() {
         <>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5 stagger-children">
             {data.items.map((p, i) => (
-              <MemoPlotCard key={p._id} plot={p} index={i} semanticMode={Boolean(queryParam)} />
+              <MemoPlotCard
+                key={p._id}
+                plot={p}
+                index={i}
+                semanticMode={Boolean(queryParam)}
+                onPrefetchDetail={prefetchPlotDetail}
+              />
             ))}
           </div>
 

@@ -3,17 +3,14 @@
 """
 
 import hashlib
-import logging
 from datetime import datetime, timedelta, timezone
 
 import jwt
 from bson import ObjectId
 from fastapi import Depends, HTTPException, Request
 
-from config import JWT_SECRET, JWT_ALGORITHM, JWT_EXPIRE_HOURS, COL_USERS, PASSWORD_SALT
-from database import get_db, get_user_repo
-
-logger = logging.getLogger(__name__)
+from config import JWT_SECRET, JWT_ALGORITHM, JWT_EXPIRE_HOURS, PASSWORD_SALT
+from database import get_user_repo
 
 
 # --------------- Password hashing ---------------
@@ -112,7 +109,7 @@ async def get_optional_user(request: Request) -> dict | None:
     return None
 
 
-async def require_admin(user: dict = Depends(get_current_user)) -> dict:
+def require_admin(user: dict = Depends(get_current_user)) -> dict:
     """Dependency: требует роль admin."""
     if user["role"] != "admin":
         raise HTTPException(403, "Admin access required")

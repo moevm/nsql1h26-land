@@ -1,13 +1,24 @@
-import { useState, useEffect } from 'react';
+import { useEffect } from 'react';
 import { X } from 'lucide-react';
+import { useForm, type UseFormRegisterReturn } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
 import type { PlotFilters } from '../api';
+import { filterFormSchema, type FilterFormValues } from '../features/forms/schemas';
+import { Button, FieldCaption, FieldError, FieldLabel, Input, Surface } from './ui';
 
-type FormState = {
-  min_price: string; max_price: string;
-  min_area: string; max_area: string;
-  min_pps: string; max_pps: string;
-  min_score: string; min_infra: string; min_feature: string;
-  location: string;
+type FormState = FilterFormValues;
+
+const EMPTY_FORM: FormState = {
+  min_price: '',
+  max_price: '',
+  min_area: '',
+  max_area: '',
+  min_price_per_sotka: '',
+  max_price_per_sotka: '',
+  min_score: '',
+  min_infra: '',
+  min_feature: '',
+  location: '',
 };
 
 interface Props {
@@ -20,84 +31,152 @@ interface Props {
 }
 
 const inputStyle: React.CSSProperties = {
-  background: 'var(--c-surface)',
-  border: '1px solid var(--c-border)',
-  color: 'var(--c-text)',
   fontFamily: 'var(--font-mono)',
   fontSize: '0.8rem',
 };
 
-function RangeField({ label, minVal, maxVal, onMinChange, onMaxChange }: {
+function RangeField({ label, minReg, maxReg, minError, maxError }: {
   readonly label: string;
-  readonly minVal: string;
-  readonly maxVal: string;
-  readonly onMinChange: (v: string) => void;
-  readonly onMaxChange: (v: string) => void;
+  readonly minReg: UseFormRegisterReturn;
+  readonly maxReg: UseFormRegisterReturn;
+  readonly minError?: string;
+  readonly maxError?: string;
 }) {
   return (
     <div>
-      <label className="text-xs uppercase tracking-wide mb-1.5 block" style={{ color: 'var(--c-text-dim)', fontFamily: 'var(--font-mono)' }}>
-        {label}
-      </label>
+      <FieldCaption style={{ color: 'var(--c-text-dim)' }}>{label}</FieldCaption>
       <div className="flex gap-2">
-        <input type="number" placeholder="от" value={minVal} onChange={(e) => onMinChange(e.target.value)} className="w-full px-3 py-2 rounded-lg" style={inputStyle} />
-        <input type="number" placeholder="до" value={maxVal} onChange={(e) => onMaxChange(e.target.value)} className="w-full px-3 py-2 rounded-lg" style={inputStyle} />
+        <Input type="number" min="0" placeholder="от" style={inputStyle} {...minReg} />
+        <Input type="number" min="0" placeholder="до" style={inputStyle} {...maxReg} />
       </div>
+      <FieldError message={minError || maxError} />
     </div>
   );
 }
 
-function ScoreField({ label, value, onChange }: { readonly label: string; readonly value: string; readonly onChange: (v: string) => void }) {
+function ScoreField({ label, reg, error }: { readonly label: string; readonly reg: UseFormRegisterReturn; readonly error?: string }) {
   return (
     <div>
-      <label className="text-xs uppercase tracking-wide mb-1.5 block" style={{ color: 'var(--c-text-dim)', fontFamily: 'var(--font-mono)' }}>
-        {label}
-      </label>
-      <input type="number" step="0.05" min="0" max="1" placeholder="0.00" value={value} onChange={(e) => onChange(e.target.value)} className="w-full px-3 py-2 rounded-lg" style={inputStyle} />
+      <FieldCaption style={{ color: 'var(--c-text-dim)' }}>{label}</FieldCaption>
+      <Input type="number" step="0.05" min="0" max="1" placeholder="0.00" style={inputStyle} {...reg} />
+      <FieldError message={error} />
     </div>
   );
 }
 
 export default function FilterPanel({ visible, filters, initialForm, onApply, onClear, onClose }: Props) {
-  const [form, setForm] = useState<FormState>(initialForm);
-  const upd = (key: keyof FormState, val: string) => setForm((f) => ({ ...f, [key]: val }));
+  const {
+    register,
+    handleSubmit,
+    reset,
+    formState: { errors },
+  } = useForm<FormState>({
+    resolver: zodResolver(filterFormSchema),
+    defaultValues: initialForm,
+  });
 
   // Sync local form when parent resets filters externally
   useEffect(() => {
-    setForm(initialForm);
-  }, [initialForm]);
+    reset(initialForm);
+  }, [initialForm, reset]);
+
+  useEffect(() => {
+    if (!visible) {
+      return;
+    }
+
+    const previousActiveElement = document.activeElement as HTMLElement | null;
+    const firstInteractive = document.querySelector<HTMLElement>('#plots-filter-panel input, #plots-filter-panel button');
+    firstInteractive?.focus();
+
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') {
+        return;
+      }
+
+      event.preventDefault();
+      onClose();
+    };
+
+    document.addEventListener('keydown', handleEscape);
+    return () => {
+      document.removeEventListener('keydown', handleEscape);
+      previousActiveElement?.focus();
+    };
+  }, [visible, onClose]);
 
   const activeFilterCount = Object.values(filters).filter(v => v !== undefined && v !== '').length;
+
+  function handleReset() {
+    reset(EMPTY_FORM);
+    onClear();
+  }
 
   return (
     <>
       {visible && (
-        <div className="rounded-xl p-5 mb-6 animate-fade-in" style={{ background: 'var(--c-card)', border: '1px solid var(--c-border)' }}>
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-sm font-semibold" style={{ color: 'var(--c-heading)', fontFamily: 'var(--font-display)' }}>Фильтры</h3>
-            <button onClick={onClose} style={{ color: 'var(--c-text-dim)' }}><X size={16} /></button>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            <RangeField label="Цена, ₽" minVal={form.min_price} maxVal={form.max_price} onMinChange={(v) => upd('min_price', v)} onMaxChange={(v) => upd('max_price', v)} />
-            <RangeField label="Площадь, сот." minVal={form.min_area} maxVal={form.max_area} onMinChange={(v) => upd('min_area', v)} onMaxChange={(v) => upd('max_area', v)} />
-            <RangeField label="Цена за сотку, ₽" minVal={form.min_pps} maxVal={form.max_pps} onMinChange={(v) => upd('min_pps', v)} onMaxChange={(v) => upd('max_pps', v)} />
-            <ScoreField label="Мин. общий скор (0–1)" value={form.min_score} onChange={(v) => upd('min_score', v)} />
-            <ScoreField label="Мин. скор инфраструктуры (0–1)" value={form.min_infra} onChange={(v) => upd('min_infra', v)} />
-            <ScoreField label="Мин. скор характеристик (0–1)" value={form.min_feature} onChange={(v) => upd('min_feature', v)} />
-            <div>
-              <label htmlFor="filter-location" className="text-xs uppercase tracking-wide mb-1.5 block" style={{ color: 'var(--c-text-dim)', fontFamily: 'var(--font-mono)' }}>
-                Район / Населённый пункт
-              </label>
-              <input id="filter-location" type="text" placeholder="Пушкин, Гатчина..." value={form.location} onChange={(e) => upd('location', e.target.value)} className="w-full px-3 py-2 rounded-lg" style={{ ...inputStyle, fontFamily: 'var(--font-body)' }} />
+        <Surface
+          id="plots-filter-panel"
+          className="p-5 mb-6 animate-fade-in"
+          role="dialog"
+          aria-label="Фильтры каталога"
+          aria-modal="false"
+        >
+          <form onSubmit={handleSubmit(onApply)}>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-sm font-semibold" style={{ color: 'var(--c-heading)', fontFamily: 'var(--font-display)' }}>Фильтры</h3>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                onClick={onClose}
+                style={{ color: 'var(--c-text-dim)' }}
+                aria-label="Закрыть фильтры"
+              >
+                <X size={16} />
+              </Button>
             </div>
-          </div>
 
-          <div className="flex gap-3 mt-5">
-            <button onClick={() => onApply(form)} className="btn-primary text-sm">Применить</button>
-            <button onClick={() => { setForm({ min_price: '', max_price: '', min_area: '', max_area: '', min_pps: '', max_pps: '', min_score: '', min_infra: '', min_feature: '', location: '' }); onClear(); }} className="btn-ghost text-sm">Сбросить</button>
-          </div>
-        </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              <RangeField
+                label="Цена, ₽"
+                minReg={register('min_price')}
+                maxReg={register('max_price')}
+                minError={errors.min_price?.message}
+                maxError={errors.max_price?.message}
+              />
+              <RangeField
+                label="Площадь, сот."
+                minReg={register('min_area')}
+                maxReg={register('max_area')}
+                minError={errors.min_area?.message}
+                maxError={errors.max_area?.message}
+              />
+              <RangeField
+                label="Цена за сотку, ₽"
+                minReg={register('min_price_per_sotka')}
+                maxReg={register('max_price_per_sotka')}
+                minError={errors.min_price_per_sotka?.message}
+                maxError={errors.max_price_per_sotka?.message}
+              />
+              <ScoreField label="Мин. общий скор (0–1)" reg={register('min_score')} error={errors.min_score?.message} />
+              <ScoreField label="Мин. скор инфраструктуры (0–1)" reg={register('min_infra')} error={errors.min_infra?.message} />
+              <ScoreField label="Мин. скор характеристик (0–1)" reg={register('min_feature')} error={errors.min_feature?.message} />
+              <div>
+                <FieldLabel htmlFor="filter-location" style={{ color: 'var(--c-text-dim)' }}>
+                  Район / Населённый пункт
+                </FieldLabel>
+                <Input id="filter-location" type="text" placeholder="Пушкин, Гатчина..." {...register('location')} style={{ fontFamily: 'var(--font-body)', fontSize: '0.8rem' }} />
+                <FieldError message={errors.location?.message} />
+              </div>
+            </div>
+
+            <div className="flex gap-3 mt-5">
+              <Button type="submit" variant="primary" size="sm">Применить</Button>
+              <Button type="button" variant="ghost" size="sm" onClick={handleReset}>Сбросить</Button>
+            </div>
+          </form>
+        </Surface>
       )}
 
       {/* Active filter tags */}
@@ -148,13 +227,15 @@ export default function FilterPanel({ visible, filters, initialForm, onApply, on
               {filters.location}
             </span>
           )}
-          <button
+          <Button
             onClick={onClear}
-            className="text-xs px-2 py-1 rounded-lg flex items-center gap-1 transition-colors"
+            variant="ghost"
+            size="sm"
+            className="text-xs px-2 py-1 rounded-lg"
             style={{ color: 'var(--c-red)', background: 'var(--c-red-dim)' }}
           >
             <X size={12} /> Сбросить
-          </button>
+          </Button>
         </div>
       )}
     </>

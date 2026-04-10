@@ -1,4 +1,5 @@
 import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { Button } from './ui';
 
 interface PaginationProps {
   readonly currentPage: number;
@@ -11,13 +12,15 @@ export default function Pagination({ currentPage, totalPages, onPageChange }: Pa
 
   return (
     <div className="flex justify-center items-center gap-2 mt-10">
-      <button
+      <Button
         onClick={() => onPageChange(currentPage - 1)}
         disabled={currentPage <= 1}
-        className="btn-ghost text-sm disabled:opacity-30"
+        variant="ghost"
+        size="sm"
+        className="disabled:opacity-30"
       >
         <ChevronLeft size={16} />
-      </button>
+      </Button>
       {Array.from({ length: Math.min(totalPages, 7) }, (_, i) => {
         let p: number;
         if (totalPages <= 7) {
@@ -30,10 +33,12 @@ export default function Pagination({ currentPage, totalPages, onPageChange }: Pa
           p = currentPage - 3 + i;
         }
         return (
-          <button
+          <Button
             key={p}
             onClick={() => onPageChange(p)}
-            className="w-9 h-9 rounded-lg text-sm font-medium transition-all duration-200"
+            variant="ghost"
+            size="sm"
+            className="w-9 h-9 rounded-lg font-medium"
             style={{
               background: p === currentPage ? 'var(--c-accent)' : 'var(--c-surface)',
               color: p === currentPage ? 'var(--c-bg)' : 'var(--c-text-muted)',
@@ -42,16 +47,18 @@ export default function Pagination({ currentPage, totalPages, onPageChange }: Pa
             }}
           >
             {p}
-          </button>
+          </Button>
         );
       })}
-      <button
+      <Button
         onClick={() => onPageChange(currentPage + 1)}
         disabled={currentPage >= totalPages}
-        className="btn-ghost text-sm disabled:opacity-30"
+        variant="ghost"
+        size="sm"
+        className="disabled:opacity-30"
       >
         <ChevronRight size={16} />
-      </button>
+      </Button>
     </div>
   );
 }

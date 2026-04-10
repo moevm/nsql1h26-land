@@ -1,32 +1,40 @@
 """
 Сервис поиска: BM25 pre-ranking + feature scoring + Jina Reranker.
 
-Этапы:
-  1. Загружаем кандидатов из MongoDB (с фильтрами)
-  2. BM25 ранжирование по текстовому запросу
-  3. Комбинированный скор: combined = α·feature_norm + β·bm25_norm
-  4. Jina Reranker → финальная сортировка по семантической релевантности
-
-Мемоизация: результаты Jina хранятся в памяти (до CACHE_TTL секунд).
-При пагинации по закэшированным результатам Jina повторно не вызывается.
+Ключевые принципы:
+  1. Единые фильтры и сортировки с обычным листингом
+  2. Стабильная пагинация (deterministic order + page clamp)
+  3. Кэш ранжированных результатов по (query + filters)
 """
 
 import hashlib
+import json
 import logging
 import re
 import time
 from dataclasses import dataclass
+from datetime import datetime
 
-import requests
+import httpx
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from rank_bm25 import BM25Okapi
-from repositories.plot_repository import PlotRepository
+
 from config import (
-    SEARCH_VECTOR_TOP_K,
-    SEARCH_JINA_TOP_N,
+    ALPHA,
+    BETA,
+    JINA_API_KEY,
+    JINA_RERANK_MODEL,
+    JINA_RERANK_URL,
     JINA_SCORE_THRESHOLD,
-    JINA_API_KEY, JINA_RERANK_URL, JINA_RERANK_MODEL,
-    ALPHA, BETA,
+    SEARCH_VECTOR_TOP_K,
+)
+from repositories.plot_repository import PlotRepository
+from services.listing_service import (
+    build_plot_filters,
+    clamp_page,
+    compute_pages,
+    normalize_order,
+    normalize_sort,
 )
 
 logger = logging.getLogger(__name__)
@@ -41,9 +49,11 @@ _NUMERIC_SORT_FIELDS = {
     "feature_score",
     "combined_score",
     "jina_score",
+    "bm25_score",
 }
 
 # --------------- BM25 helpers ---------------
+
 
 def _tokenize_ru(text: str) -> list[str]:
     """Простая токенизация для русского текста."""
@@ -53,54 +63,55 @@ def _tokenize_ru(text: str) -> list[str]:
 def _bm25_rank(
     query: str,
     candidates: list[dict],
-    top_k: int = SEARCH_VECTOR_TOP_K,
+    top_k: int | None = SEARCH_VECTOR_TOP_K,
 ) -> list[dict]:
     """
     BM25 ранжирование кандидатов по текстовому запросу.
-    Добавляет поле bm25_score, возвращает top_k.
+    Добавляет поле bm25_score, возвращает top_k (или все при top_k=None).
     """
     if not query or not query.strip():
-        for c in candidates:
-            c["bm25_score"] = 0.0
-        return sorted(candidates, key=lambda x: x.get("feature_score", 0), reverse=True)[:top_k]
+        for candidate in candidates:
+            candidate["bm25_score"] = 0.0
+        ranked = sorted(candidates, key=lambda item: item.get("feature_score", 0), reverse=True)
+        return ranked if top_k is None else ranked[:top_k]
 
     corpus = [
-        _tokenize_ru(f"{c.get('title', '')} {c.get('description', '')}")
-        for c in candidates
+        _tokenize_ru(f"{candidate.get('title', '')} {candidate.get('description', '')}")
+        for candidate in candidates
     ]
     bm25 = BM25Okapi(corpus)
     scores = bm25.get_scores(_tokenize_ru(query))
 
-    for i, c in enumerate(candidates):
-        c["bm25_score"] = round(float(scores[i]), 4)
+    for index, candidate in enumerate(candidates):
+        candidate["bm25_score"] = round(float(scores[index]), 4)
 
-    ranked = sorted(candidates, key=lambda x: x["bm25_score"], reverse=True)
-    return ranked[:top_k]
+    ranked = sorted(candidates, key=lambda item: item["bm25_score"], reverse=True)
+    return ranked if top_k is None else ranked[:top_k]
 
 
 def _compute_combined(candidates: list[dict]) -> list[dict]:
     """
-    Нормализует feature_score и bm25_score в [0,1], вычисляет
-    combined_score = α·feature_norm + β·bm25_norm.
+    Нормализует feature_score и bm25_score в [0,1] и вычисляет
+    combined_score = alpha*feature_norm + beta*bm25_norm.
     """
     if not candidates:
         return candidates
 
-    fs_vals = [c.get("feature_score", 0) for c in candidates]
-    bm_vals = [c.get("bm25_score", 0) for c in candidates]
+    feature_values = [candidate.get("feature_score", 0) for candidate in candidates]
+    bm25_values = [candidate.get("bm25_score", 0) for candidate in candidates]
 
-    fs_min, fs_max = min(fs_vals), max(fs_vals)
-    fs_range = fs_max - fs_min if fs_max - fs_min > 1e-9 else 1.0
+    feature_min, feature_max = min(feature_values), max(feature_values)
+    feature_range = feature_max - feature_min if feature_max - feature_min > 1e-9 else 1.0
 
-    bm_min, bm_max = min(bm_vals), max(bm_vals)
-    bm_range = bm_max - bm_min if bm_max - bm_min > 1e-9 else 1.0
+    bm25_min, bm25_max = min(bm25_values), max(bm25_values)
+    bm25_range = bm25_max - bm25_min if bm25_max - bm25_min > 1e-9 else 1.0
 
-    for c in candidates:
-        fs_norm = (c.get("feature_score", 0) - fs_min) / fs_range
-        bm_norm = (c.get("bm25_score", 0) - bm_min) / bm_range
-        c["combined_score"] = round(ALPHA * fs_norm + BETA * bm_norm, 4)
+    for candidate in candidates:
+        feature_norm = (candidate.get("feature_score", 0) - feature_min) / feature_range
+        bm25_norm = (candidate.get("bm25_score", 0) - bm25_min) / bm25_range
+        candidate["combined_score"] = round(ALPHA * feature_norm + BETA * bm25_norm, 4)
 
-    candidates.sort(key=lambda x: x["combined_score"], reverse=True)
+    candidates.sort(key=lambda item: item["combined_score"], reverse=True)
     return candidates
 
 
@@ -118,27 +129,38 @@ class _CacheEntry:
 _search_cache: dict[str, _CacheEntry] = {}
 
 
+def invalidate_search_cache() -> None:
+    """Очищает кэш поиска после изменения данных объявлений."""
+    _search_cache.clear()
+
+
 def _cache_key(query: str, filters: dict | None) -> str:
-    raw = query.lower().strip() + "|" + str(sorted((filters or {}).items()))
+    payload = {
+        "query": query.lower().strip(),
+        "filters": filters or {},
+    }
+    raw = json.dumps(payload, sort_keys=True, ensure_ascii=True, default=str)
     return hashlib.md5(raw.encode()).hexdigest()
 
 
 def _evict_expired() -> None:
     now = time.time()
-    expired = [k for k, v in _search_cache.items() if now - v.timestamp > CACHE_TTL]
-    for k in expired:
-        del _search_cache[k]
+    expired_keys = [key for key, value in _search_cache.items() if now - value.timestamp > CACHE_TTL]
+    for key in expired_keys:
+        del _search_cache[key]
+
     while len(_search_cache) > MAX_CACHE_SIZE:
-        oldest_key = min(_search_cache, key=lambda k: _search_cache[k].timestamp)
+        oldest_key = min(_search_cache, key=lambda key: _search_cache[key].timestamp)
         del _search_cache[oldest_key]
 
 
 # --------------- Jina Reranker ---------------
 
-def jina_rerank(
+
+async def jina_rerank(
     query: str,
     candidates: list[dict],
-    top_n: int = SEARCH_JINA_TOP_N,
+    top_n: int,
 ) -> list[dict]:
     """Семантический реранкинг через Jina API."""
     if not query or not query.strip():
@@ -148,10 +170,10 @@ def jina_rerank(
         logger.warning("JINA_API_KEY not set, skipping rerank")
         return candidates[:top_n]
 
-    documents = []
-    for c in candidates:
-        doc_text = c.get("description", "").lower()
-        features_text = c.get("features_text", "")
+    documents: list[str] = []
+    for candidate in candidates:
+        doc_text = f"{candidate.get('title', '')}\n{candidate.get('description', '')}".lower()
+        features_text = candidate.get("features_text", "")
         if features_text:
             doc_text += f"\nХарактеристики: {features_text}"
         documents.append(doc_text[:4000])
@@ -169,54 +191,75 @@ def jina_rerank(
     }
 
     try:
-        resp = requests.post(JINA_RERANK_URL, json=payload, headers=headers, timeout=30)
-        resp.raise_for_status()
-        data = resp.json()
-    except requests.exceptions.RequestException as e:
-        logger.error("Jina Reranker error: %s", e)
+        async with httpx.AsyncClient(timeout=30) as client:
+            response = await client.post(
+                JINA_RERANK_URL,
+                json=payload,
+                headers=headers,
+            )
+        response.raise_for_status()
+        data = response.json()
+    except httpx.HTTPError as error:
+        logger.error("Jina Reranker error: %s", error)
         return candidates[:top_n]
 
-    results_data = data.get("results", [])
-    reranked = []
-    for item in results_data:
-        idx = item["index"]
+    reranked: list[dict] = []
+    for item in data.get("results", []):
+        index = item["index"]
         score = item["relevance_score"]
-        candidate = candidates[idx].copy()
-        candidate["jina_score"] = round(score, 4)
+        candidate = candidates[index].copy()
+        candidate["jina_score"] = round(float(score), 4)
         reranked.append(candidate)
 
     return reranked[:top_n]
 
 
-def _apply_threshold(results: list[dict], threshold: float) -> list[dict]:
+def _prioritize_by_threshold(results: list[dict], threshold: float) -> list[dict]:
+    """
+    Не удаляет документы ниже порога, а только переносит их в хвост.
+    Это сохраняет корректные total/pages и стабильную пагинацию.
+    """
     if threshold <= 0:
         return results
-    return [r for r in results if r.get("jina_score", 1.0) >= threshold]
+
+    above = [item for item in results if item.get("jina_score", 0.0) >= threshold]
+    below = [item for item in results if item.get("jina_score", 0.0) < threshold]
+    return above + below
 
 
-def _default_sort_value(sort_field: str):
+def _stable_doc_id(item: dict) -> str:
+    value = item.get("_id")
+    return str(value) if value is not None else ""
+
+
+def _default_sort_value(sort_field: str, sort_order: str):
     if sort_field in _NUMERIC_SORT_FIELDS:
-        return float("-inf")
+        return float("inf") if sort_order == "asc" else float("-inf")
     if sort_field == "created_at":
-        return 0.0
-    return ""
+        return float("inf") if sort_order == "asc" else float("-inf")
+    return "\uffff" if sort_order == "asc" else ""
 
 
-def _extract_sort_value(item: dict, sort_field: str):
+def _extract_sort_value(item: dict, sort_field: str, sort_order: str):
     value = item.get(sort_field)
     if value is None:
-        return _default_sort_value(sort_field)
+        return _default_sort_value(sort_field, sort_order)
 
     if sort_field == "created_at":
         if hasattr(value, "timestamp"):
-            return value.timestamp()
-        return str(value)
+            return float(value.timestamp())
+        if isinstance(value, str):
+            try:
+                return datetime.fromisoformat(value.replace("Z", "+00:00")).timestamp()
+            except ValueError:
+                return _default_sort_value(sort_field, sort_order)
+        return _default_sort_value(sort_field, sort_order)
 
     if sort_field in _NUMERIC_SORT_FIELDS:
         try:
             return float(value)
         except (TypeError, ValueError):
-            return float("-inf")
+            return _default_sort_value(sort_field, sort_order)
 
     return str(value).lower()
 
@@ -226,97 +269,96 @@ def _sort_results(results: list[dict], sort_field: str, sort_order: str) -> list
     if not results:
         return []
 
-    reverse = sort_order == "desc"
+    normalized_order = normalize_order(sort_order)
+    reverse = normalized_order == "desc"
+
     if sort_field == "relevance":
-        if reverse:
-            return list(results)
-        return list(reversed(results))
+        return list(results) if reverse else list(reversed(results))
 
-    return sorted(results, key=lambda item: _extract_sort_value(item, sort_field), reverse=reverse)
+    return sorted(
+        results,
+        key=lambda item: (
+            _extract_sort_value(item, sort_field, normalized_order),
+            _stable_doc_id(item),
+        ),
+        reverse=reverse,
+    )
 
 
-def _build_mongo_filters(filters: dict | None) -> dict:
-    payload = filters or {}
-    mongo_filters: dict = {}
-
-    def _apply_range(field: str, min_key: str, max_key: str):
-        min_value = payload.get(min_key)
-        max_value = payload.get(max_key)
-        if min_value is None and max_value is None:
-            return
-        mongo_filters[field] = {}
-        if min_value is not None:
-            mongo_filters[field]["$gte"] = min_value
-        if max_value is not None:
-            mongo_filters[field]["$lte"] = max_value
-
-    _apply_range("price", "min_price", "max_price")
-    _apply_range("area_sotki", "min_area", "max_area")
-    _apply_range("price_per_sotka", "min_price_per_sotka", "max_price_per_sotka")
-
-    if payload.get("min_score") is not None:
-        mongo_filters["total_score"] = {"$gte": payload["min_score"]}
-    if payload.get("min_infra") is not None:
-        mongo_filters["infra_score"] = {"$gte": payload["min_infra"]}
-    if payload.get("min_feature") is not None:
-        mongo_filters["feature_score"] = {"$gte": payload["min_feature"]}
-
-    location = payload.get("location")
-    if isinstance(location, str) and location.strip():
-        mongo_filters["location"] = {"$regex": location.strip(), "$options": "i"}
-
-    return mongo_filters
+def _compute_rerank_depth(total_candidates: int, page: int, page_size: int) -> int:
+    required = max(page * page_size, page_size)
+    headroom = required * 3
+    baseline = max(SEARCH_VECTOR_TOP_K, page_size * 5)
+    return min(total_candidates, max(baseline, headroom))
 
 
 # --------------- Main search ---------------
+
 
 async def search_plots(
     db: AsyncIOMotorDatabase,
     query: str,
     page: int = 1,
-    page_size: int = SEARCH_JINA_TOP_N,
+    page_size: int = 20,
     filters: dict | None = None,
     sort_field: str = "relevance",
     sort_order: str = "desc",
-) -> tuple[list[dict], int, bool]:
+) -> tuple[list[dict], int, int, int]:
     """
-    Поисковый пайплайн: BM25 + feature scoring → Jina Reranker.
-    Возвращает (page_items, total_cached, can_expand=False).
+    Поисковый пайплайн: BM25 + feature scoring + Jina Reranker.
+    Возвращает (page_items, total, pages, current_page).
     """
-    mongo_filters = _build_mongo_filters(filters)
+    query_text = (query or "").strip()
+    if not query_text:
+        return [], 0, 1, 1
 
-    key = _cache_key(query, mongo_filters)
-    offset = (page - 1) * page_size
+    safe_page = max(1, page)
+    safe_page_size = max(1, page_size)
+    normalized_sort = normalize_sort(sort_field, has_query=True)
+    normalized_order = normalize_order(sort_order)
+
+    mongo_filters = build_plot_filters(filters)
+    key = _cache_key(query_text, mongo_filters)
     now = time.time()
 
     _evict_expired()
 
     entry = _search_cache.get(key)
     if entry is not None and (now - entry.timestamp) < CACHE_TTL:
-        sorted_results = _sort_results(entry.results, sort_field, sort_order)
+        sorted_results = _sort_results(entry.results, normalized_sort, normalized_order)
         total = len(sorted_results)
-        return sorted_results[offset:offset + page_size], total, False
+        pages = compute_pages(total, safe_page_size)
+        current_page = clamp_page(safe_page, pages)
+        offset = (current_page - 1) * safe_page_size
+        return sorted_results[offset:offset + safe_page_size], total, pages, current_page
 
-    # 1. Загружаем кандидатов из БД
     repo = PlotRepository(db)
     candidates = await repo.find_all(query_filter=mongo_filters or None)
 
     if not candidates:
         _search_cache[key] = _CacheEntry(results=[], timestamp=now)
-        return [], 0, False
+        return [], 0, 1, 1
 
-    # 2. BM25 ранжирование → top K
-    bm25_top = _bm25_rank(query, candidates, top_k=SEARCH_VECTOR_TOP_K)
+    # 1) BM25 ранжирование по всей отфильтрованной выборке
+    bm25_ranked = _bm25_rank(query_text, candidates, top_k=len(candidates))
 
-    # 3. Комбинированный скор: α·features + β·bm25
-    bm25_top = _compute_combined(bm25_top)
+    # 2) Комбинированный скор: alpha*feature + beta*bm25
+    bm25_ranked = _compute_combined(bm25_ranked)
 
-    # 4. Jina реранкирует все кандидаты, затем отсекаем по порогу
-    reranked = jina_rerank(query, bm25_top, top_n=len(bm25_top))
-    reranked = _apply_threshold(reranked, JINA_SCORE_THRESHOLD)
+    # 3) Реранжим только "голову" списка с запасом под текущую/следующие страницы
+    rerank_depth = _compute_rerank_depth(len(bm25_ranked), safe_page, safe_page_size)
+    head = bm25_ranked[:rerank_depth]
+    tail = bm25_ranked[rerank_depth:]
 
-    _search_cache[key] = _CacheEntry(results=reranked, timestamp=now)
+    reranked_head = await jina_rerank(query_text, head, top_n=len(head))
+    reranked_head = _prioritize_by_threshold(reranked_head, JINA_SCORE_THRESHOLD)
+    ranked_results = reranked_head + tail
 
-    sorted_results = _sort_results(reranked, sort_field, sort_order)
+    _search_cache[key] = _CacheEntry(results=ranked_results, timestamp=now)
+
+    sorted_results = _sort_results(ranked_results, normalized_sort, normalized_order)
     total = len(sorted_results)
-    return sorted_results[offset:offset + page_size], total, False
+    pages = compute_pages(total, safe_page_size)
+    current_page = clamp_page(safe_page, pages)
+    offset = (current_page - 1) * safe_page_size
+    return sorted_results[offset:offset + safe_page_size], total, pages, current_page

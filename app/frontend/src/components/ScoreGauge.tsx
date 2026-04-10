@@ -36,7 +36,7 @@ export default function ScoreGauge({ value, size = 44, label, color }: ScoreGaug
           strokeDasharray={circumference}
           strokeDashoffset={offset}
           transform={`rotate(-90 ${size / 2} ${size / 2})`}
-          style={{ transition: 'stroke-dashoffset 1s cubic-bezier(0.4,0,0.2,1)' }}
+          style={{ transition: 'stroke-dashoffset var(--motion-duration) var(--motion-ease)' }}
         />
         <text
           x={size / 2}

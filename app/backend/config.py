@@ -3,6 +3,11 @@ from dotenv import load_dotenv
 
 load_dotenv(os.path.join(os.path.dirname(__file__), "..", ".env"))
 
+
+def _parse_csv_env(name: str, default: str) -> list[str]:
+    raw = os.getenv(name, default)
+    return [value.strip() for value in raw.split(",") if value.strip()]
+
 # --- MongoDB ---
 MONGODB_URI = os.getenv("MONGODB_URI", "mongodb://mongo:27017")
 MONGODB_DB = os.getenv("MONGODB_DB", "land_plots")
@@ -94,9 +99,15 @@ BETA = 0.4
 JWT_SECRET = os.getenv("JWT_SECRET", "land-plots-dev-secret-key-change-in-prod")
 JWT_ALGORITHM = "HS256"
 JWT_EXPIRE_HOURS = 72
-PASSWORD_SALT = os.getenv("PASSWORD_SALT", "default-dev-salt-change-in-prod")
+PASSWORD_SALT = os.getenv("PASSWORD_SALT", JWT_SECRET)
 COL_USERS = "users"
 
 # --- Pagination ---
 DEFAULT_PAGE_SIZE = 20
 MAX_PAGE_SIZE = 100
+
+# --- CORS ---
+CORS_ORIGINS = _parse_csv_env(
+    "CORS_ORIGINS",
+    "http://localhost:3000,http://localhost:5173",
+)

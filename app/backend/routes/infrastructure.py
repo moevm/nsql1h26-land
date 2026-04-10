@@ -4,11 +4,12 @@
 
 import asyncio
 import logging
+from typing import Annotated, Any
 
 from bson import ObjectId
 from fastapi import APIRouter, Depends, HTTPException
 
-from database import get_infra_repo
+from database import get_db, get_infra_repo
 from config import INFRA_COLLECTIONS, COL_NEGATIVE
 from models import InfraObjectCreate, InfraObjectOut
 from auth import require_admin
@@ -19,6 +20,13 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/infra", tags=["infrastructure"])
 
 ALL_COLLECTIONS = INFRA_COLLECTIONS + [COL_NEGATIVE]
+_BACKGROUND_TASKS: set[asyncio.Task[Any]] = set()
+
+
+def _schedule_background_task(coro: Any) -> None:
+    task = asyncio.create_task(coro)
+    _BACKGROUND_TASKS.add(task)
+    task.add_done_callback(_BACKGROUND_TASKS.discard)
 
 
 def _serialize(doc: dict) -> dict:
@@ -29,13 +37,31 @@ def _serialize(doc: dict) -> dict:
     return doc
 
 
+def _trigger_recalc() -> None:
+    """Фоновый пересчёт скоров после изменения инфраструктуры."""
+    db = get_db()
+
+    async def _run() -> None:
+        try:
+            updated = await recalculate_all_scores(db)
+            logger.info("Recalculated scores for %d plots after infra update", updated)
+        except Exception as exc:
+            logger.warning("Failed to recalculate scores after infra update: %s", exc)
+
+    _schedule_background_task(_run())
+
+
 @router.get("/collections")
 async def list_collections():
     """Список доступных инфра-коллекций."""
     return {"collections": ALL_COLLECTIONS}
 
 
-@router.get("/{collection}", response_model=list[InfraObjectOut])
+@router.get(
+    "/{collection}",
+    response_model=list[InfraObjectOut],
+    responses={400: {"description": "Unknown collection"}},
+)
 async def list_objects(collection: str):
     """Список объектов в коллекции."""
     if collection not in ALL_COLLECTIONS:
@@ -45,8 +71,17 @@ async def list_objects(collection: str):
     return [InfraObjectOut(**_serialize(d)) for d in docs]
 
 
-@router.post("/{collection}", response_model=InfraObjectOut, status_code=201)
-async def add_object(collection: str, data: InfraObjectCreate, _: dict = Depends(require_admin)):
+@router.post(
+    "/{collection}",
+    response_model=InfraObjectOut,
+    status_code=201,
+    responses={400: {"description": "Unknown collection"}},
+)
+async def add_object(
+    collection: str,
+    data: InfraObjectCreate,
+    _: Annotated[dict, Depends(require_admin)],
+):
     """Добавить объект инфраструктуры."""
     if collection not in ALL_COLLECTIONS:
         raise HTTPException(400, f"Unknown collection: {collection}")
@@ -62,12 +97,23 @@ async def add_object(collection: str, data: InfraObjectCreate, _: dict = Depends
     doc["_id"] = str(inserted_id)
     doc["lat"] = data.lat
     doc["lon"] = data.lon
-    _trigger_recalc(db)
+    _trigger_recalc()
     return InfraObjectOut(**doc)
 
 
-@router.delete("/{collection}/{object_id}", status_code=204)
-async def delete_object(collection: str, object_id: str, _: dict = Depends(require_admin)):
+@router.delete(
+    "/{collection}/{object_id}",
+    status_code=204,
+    responses={
+        400: {"description": "Unknown collection"},
+        404: {"description": "Invalid ID or object not found"},
+    },
+)
+async def delete_object(
+    collection: str,
+    object_id: str,
+    _: Annotated[dict, Depends(require_admin)],
+):
     """Удалить объект инфраструктуры."""
     if collection not in ALL_COLLECTIONS:
         raise HTTPException(400, f"Unknown collection: {collection}")
@@ -79,11 +125,19 @@ async def delete_object(collection: str, object_id: str, _: dict = Depends(requi
     deleted = await repo.delete_one(collection, oid)
     if not deleted:
         raise HTTPException(404, "Object not found")
-    _trigger_recalc(db)
+    _trigger_recalc()
 
 
-@router.put("/{collection}", status_code=200)
-async def replace_collection(collection: str, data: list[InfraObjectCreate], _: dict = Depends(require_admin)):
+@router.put(
+    "/{collection}",
+    status_code=200,
+    responses={400: {"description": "Unknown collection"}},
+)
+async def replace_collection(
+    collection: str,
+    data: list[InfraObjectCreate],
+    _: Annotated[dict, Depends(require_admin)],
+):
     """
     Полностью перезаписать коллекцию инфраструктуры.
     Удаляет все текущие документы и вставляет новые.
@@ -103,4 +157,5 @@ async def replace_collection(collection: str, data: list[InfraObjectCreate], _: 
         docs.append(doc)
 
     count = await repo.replace_all(collection, docs)
+    _trigger_recalc()
     return {"replaced": count, "collection": collection}

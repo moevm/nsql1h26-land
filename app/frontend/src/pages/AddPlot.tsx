@@ -1,90 +1,50 @@
 import { useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { MapContainer, TileLayer, Marker, useMapEvents } from 'react-leaflet';
-import L from 'leaflet';
-import 'leaflet/dist/leaflet.css';
-import { createPlot } from '../api';
-import { SPB_CENTER, getErrorMessage, formatPrice } from '../utils';
-import { invalidateCache } from '../cache';
-
-// Fix default marker icon
-delete (L.Icon.Default.prototype as any)._getIconUrl;
-L.Icon.Default.mergeOptions({
-  iconRetinaUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
-  iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
-  shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
-});
-
-// Custom gold marker
-const goldIcon = new L.Icon({
-  iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
-  iconRetinaUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
-  shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
-  iconSize: [25, 41],
-  iconAnchor: [12, 41],
-  popupAnchor: [1, -34],
-  shadowSize: [41, 41],
-  className: 'hue-rotate-[30deg] brightness-125',
-});
-
-function MapPicker({ lat, lon, onChange }: { readonly lat: number | null; readonly lon: number | null; readonly onChange: (lat: number, lon: number) => void }) {
-  function ClickHandler() {
-    useMapEvents({
-      click(e) {
-        onChange(e.latlng.lat, e.latlng.lng);
-      },
-    });
-    return null;
-  }
-
-  return (
-    <MapContainer
-      center={lat && lon ? [lat, lon] : SPB_CENTER}
-      zoom={10}
-      style={{ height: '360px', width: '100%', borderRadius: '12px' }}
-      className="z-0"
-    >
-      <TileLayer
-        attribution='&copy; <a href="https://carto.com/">CARTO</a>'
-        url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
-      />
-      <ClickHandler />
-      {lat && lon && <Marker position={[lat, lon]} icon={goldIcon} />}
-    </MapContainer>
-  );
-}
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { getErrorMessage, formatPrice } from '../utils';
+import { buildPlotPayload, type PlotFormState } from '../plotPayload';
+import { useCreatePlotMutation } from '../features/plots/hooks';
+import { plotFormSchema } from '../features/forms/schemas';
+import { PLOT_FORM_DEFAULT_VALUES } from '../features/forms/plotFormDefaults';
+import { AlertMessage } from '../components/AlertMessage';
+import { CoordinateBadge } from '../components/CoordinateBadge';
+import { PageHeader } from '../components/PageHeader';
+import { PlotMapPicker } from '../components/PlotMapPicker';
+import { SectionTitle } from '../components/SectionTitle';
+import { Button, FieldError, FieldLabel, Input, Surface, Textarea } from '../components/ui';
 
 export default function AddPlot() {
   const navigate = useNavigate();
-  const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const createMutation = useCreatePlotMutation({
+    onSuccess: (created) => {
+      navigate(`/plots/${created._id}`);
+    },
+  });
 
-  const [form, setForm] = useState({
-    title: '',
-    description: '',
-    price: '',
-    area_sotki: '',
-    location: '',
-    address: '',
-    geo_ref: '',
-    url: '',
-    thumbnail: '',
+  const {
+    register,
+    handleSubmit,
+    watch,
+    formState: { errors },
+  } = useForm<PlotFormState>({
+    resolver: zodResolver(plotFormSchema),
+    defaultValues: PLOT_FORM_DEFAULT_VALUES,
   });
 
   const [lat, setLat] = useState<number | null>(null);
   const [lon, setLon] = useState<number | null>(null);
+
+  const priceValue = watch('price');
+  const areaValue = watch('area_sotki');
 
   const handleMapClick = useCallback((newLat: number, newLon: number) => {
     setLat(newLat);
     setLon(newLon);
   }, []);
 
-  function onChange(e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) {
-    setForm((f) => ({ ...f, [e.target.name]: e.target.value }));
-  }
-
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
+  async function onSubmit(values: PlotFormState) {
     setError('');
 
     if (lat === null || lon === null) {
@@ -92,190 +52,114 @@ export default function AddPlot() {
       return;
     }
 
-    setLoading(true);
     try {
-      const data: Record<string, unknown> = {
-        title: form.title,
-        description: form.description,
-        price: Number(form.price) || 0,
-        area_sotki: form.area_sotki ? Number(form.area_sotki) : null,
-        location: form.location,
-        address: form.address,
-        geo_ref: form.geo_ref,
-        lat,
-        lon,
-        url: form.url,
-        thumbnail: form.thumbnail,
-      };
-      const created = await createPlot(data);
-      invalidateCache('plots');
-      invalidateCache('map-plots');
-      navigate(`/plots/${created._id}`);
+      const data = buildPlotPayload(values, lat, lon);
+      await createMutation.mutateAsync(data);
     } catch (e) {
       setError(getErrorMessage(e));
-    } finally {
-      setLoading(false);
     }
   }
 
   return (
     <div className="max-w-3xl mx-auto animate-fade-in-up">
-      <h1
-        className="text-2xl sm:text-3xl font-bold mb-2"
-        style={{ fontFamily: 'var(--font-display)', color: 'var(--c-heading)' }}
-      >
-        Новый участок
-      </h1>
-      <p className="mb-6 text-sm" style={{ color: 'var(--c-text-muted)' }}>
-        Добавьте объявление — система автоматически рассчитает расстояния и характеристики
-      </p>
+      <PageHeader
+        title="Новый участок"
+        subtitle="Добавьте объявление — система автоматически рассчитает расстояния и характеристики"
+      />
 
-      {error && (
-        <div
-          className="px-4 py-3 rounded-xl mb-5 text-sm"
-          style={{ background: 'var(--c-red-dim)', color: 'var(--c-red)', border: '1px solid var(--c-red)' }}
-        >
-          {error}
-        </div>
-      )}
+      <AlertMessage message={error} />
 
-      <form onSubmit={handleSubmit} className="space-y-5">
+      <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
         {/* Map picker */}
-        <div
-          className="rounded-xl overflow-hidden p-5"
-          style={{ background: 'var(--c-card)', border: '1px solid var(--c-border)' }}
-        >
+        <Surface className="overflow-hidden p-5">
           <div className="flex items-center justify-between mb-3">
-            <h2
-              className="text-lg font-semibold"
-              style={{ fontFamily: 'var(--font-display)', color: 'var(--c-heading)' }}
-            >
-              Местоположение *
-            </h2>
-            {lat !== null && lon !== null && (
-              <span
-                className="text-xs px-3 py-1 rounded-lg"
-                style={{
-                  background: 'var(--c-green-dim)',
-                  color: 'var(--c-green)',
-                  fontFamily: 'var(--font-mono)',
-                }}
-              >
-                {lat.toFixed(6)}, {lon.toFixed(6)}
-              </span>
-            )}
+            <SectionTitle>Местоположение *</SectionTitle>
+            <CoordinateBadge lat={lat} lon={lon} />
           </div>
           <p className="text-xs mb-3" style={{ color: 'var(--c-text-dim)' }}>
             Кликните на карту, чтобы указать точку расположения участка
           </p>
-          <MapPicker lat={lat} lon={lon} onChange={handleMapClick} />
-        </div>
+          <PlotMapPicker lat={lat} lon={lon} onChange={handleMapClick} />
+        </Surface>
 
         {/* Main info */}
-        <div
-          className="rounded-xl p-5 space-y-4"
-          style={{ background: 'var(--c-card)', border: '1px solid var(--c-border)' }}
-        >
-          <h2
-            className="text-lg font-semibold"
-            style={{ fontFamily: 'var(--font-display)', color: 'var(--c-heading)' }}
-          >
-            Основная информация
-          </h2>
+        <Surface className="p-5 space-y-4">
+          <SectionTitle>Основная информация</SectionTitle>
 
           <div>
-            <label htmlFor="add-title" className="block text-xs mb-1.5 uppercase tracking-wide" style={{ color: 'var(--c-text-muted)', fontFamily: 'var(--font-mono)' }}>
-              Заголовок *
-            </label>
-            <input id="add-title" name="title" value={form.title} onChange={onChange} required className="input-field" placeholder="Земельный участок 10 соток, ИЖС" />
+            <FieldLabel htmlFor="add-title">Заголовок *</FieldLabel>
+            <Input id="add-title" {...register('title')} placeholder="Земельный участок 10 соток, ИЖС" />
+            <FieldError message={errors.title?.message} />
           </div>
 
           <div>
-            <label htmlFor="add-description" className="block text-xs mb-1.5 uppercase tracking-wide" style={{ color: 'var(--c-text-muted)', fontFamily: 'var(--font-mono)' }}>
-              Описание
-            </label>
-            <textarea
+            <FieldLabel htmlFor="add-description">Описание</FieldLabel>
+            <Textarea
               id="add-description"
-              name="description"
-              value={form.description}
-              onChange={onChange}
+              {...register('description')}
               rows={5}
-              className="input-field"
               placeholder="Опишите участок: коммуникации, особенности, окружение..."
             />
           </div>
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label htmlFor="add-price" className="block text-xs mb-1.5 uppercase tracking-wide" style={{ color: 'var(--c-text-muted)', fontFamily: 'var(--font-mono)' }}>
-                Цена (₽)
-              </label>
-              <input id="add-price" name="price" type="number" step="10000" min="0" placeholder="1 500 000" value={form.price} onChange={onChange} className="input-field" />
-              {form.price && Number(form.price) > 0 && (
-                <p className="text-xs mt-1" style={{ color: 'var(--c-accent)', fontFamily: 'var(--font-mono)' }}>{formatPrice(Number(form.price))}</p>
+              <FieldLabel htmlFor="add-price">Цена (₽)</FieldLabel>
+              <Input id="add-price" type="number" step="10000" min="0" placeholder="1 500 000" {...register('price')} />
+              <FieldError message={errors.price?.message} />
+              {priceValue && Number(priceValue) > 0 && (
+                <p className="text-xs mt-1" style={{ color: 'var(--c-accent)', fontFamily: 'var(--font-mono)' }}>{formatPrice(Number(priceValue))}</p>
               )}
             </div>
             <div>
-              <label htmlFor="add-area" className="block text-xs mb-1.5 uppercase tracking-wide" style={{ color: 'var(--c-text-muted)', fontFamily: 'var(--font-mono)' }}>
-                Площадь (сотки)
-              </label>
-              <input id="add-area" name="area_sotki" type="number" step="0.5" min="0" placeholder="10" value={form.area_sotki} onChange={onChange} className="input-field" />
-              {form.price && form.area_sotki && Number(form.area_sotki) > 0 && (
-                <p className="text-xs mt-1" style={{ color: 'var(--c-text-muted)', fontFamily: 'var(--font-mono)' }}>≈ {formatPrice(Number(form.price) / Number(form.area_sotki))}/сот.</p>
+              <FieldLabel htmlFor="add-area">Площадь (сотки)</FieldLabel>
+              <Input id="add-area" type="number" step="0.5" min="0" placeholder="10" {...register('area_sotki')} />
+              <FieldError message={errors.area_sotki?.message} />
+              {priceValue && areaValue && Number(areaValue) > 0 && (
+                <p className="text-xs mt-1" style={{ color: 'var(--c-text-muted)', fontFamily: 'var(--font-mono)' }}>≈ {formatPrice(Number(priceValue) / Number(areaValue))}/сот.</p>
               )}
             </div>
           </div>
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label htmlFor="add-location" className="block text-xs mb-1.5 uppercase tracking-wide" style={{ color: 'var(--c-text-muted)', fontFamily: 'var(--font-mono)' }}>
-                Район
-              </label>
-              <input id="add-location" name="location" value={form.location} onChange={onChange} className="input-field" />
+              <FieldLabel htmlFor="add-location">Район</FieldLabel>
+              <Input id="add-location" {...register('location')} />
             </div>
             <div>
-              <label htmlFor="add-address" className="block text-xs mb-1.5 uppercase tracking-wide" style={{ color: 'var(--c-text-muted)', fontFamily: 'var(--font-mono)' }}>
-                Адрес
-              </label>
-              <input id="add-address" name="address" value={form.address} onChange={onChange} className="input-field" />
+              <FieldLabel htmlFor="add-address">Адрес</FieldLabel>
+              <Input id="add-address" {...register('address')} />
             </div>
           </div>
 
           <div>
-            <label htmlFor="add-geo-ref" className="block text-xs mb-1.5 uppercase tracking-wide" style={{ color: 'var(--c-text-muted)', fontFamily: 'var(--font-mono)' }}>
-              Гео-описание
-            </label>
-            <input
+            <FieldLabel htmlFor="add-geo-ref">Гео-описание</FieldLabel>
+            <Input
               id="add-geo-ref"
-              name="geo_ref"
-              value={form.geo_ref}
-              onChange={onChange}
-              className="input-field"
+              {...register('geo_ref')}
               placeholder="д. Низино, СНТ Сад-2"
             />
           </div>
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label htmlFor="add-url" className="block text-xs mb-1.5 uppercase tracking-wide" style={{ color: 'var(--c-text-muted)', fontFamily: 'var(--font-mono)' }}>
-                URL объявления
-              </label>
-              <input id="add-url" name="url" value={form.url} onChange={onChange} className="input-field" />
+              <FieldLabel htmlFor="add-url">URL объявления</FieldLabel>
+              <Input id="add-url" {...register('url')} />
+              <FieldError message={errors.url?.message} />
             </div>
             <div>
-              <label htmlFor="add-thumbnail" className="block text-xs mb-1.5 uppercase tracking-wide" style={{ color: 'var(--c-text-muted)', fontFamily: 'var(--font-mono)' }}>
-                URL изображения
-              </label>
-              <input id="add-thumbnail" name="thumbnail" value={form.thumbnail} onChange={onChange} className="input-field" />
+              <FieldLabel htmlFor="add-thumbnail">URL изображения</FieldLabel>
+              <Input id="add-thumbnail" {...register('thumbnail')} />
+              <FieldError message={errors.thumbnail?.message} />
             </div>
           </div>
-        </div>
+        </Surface>
 
         {/* Submit */}
         <div className="pt-2">
-          <button type="submit" disabled={loading} className="btn-primary w-full py-4 text-base">
-            {loading ? 'Добавление... (расчёт фич и расстояний)' : 'Добавить участок'}
-          </button>
+          <Button type="submit" disabled={createMutation.isPending} className="w-full py-4 text-base">
+            {createMutation.isPending ? 'Добавление... (расчёт фич и расстояний)' : 'Добавить участок'}
+          </Button>
           <p className="text-xs mt-3 text-center" style={{ color: 'var(--c-text-dim)' }}>
             При добавлении автоматически рассчитываются текстовые фичи, эмбеддинги и расстояния до инфраструктуры
           </p>

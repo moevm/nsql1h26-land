@@ -3,20 +3,20 @@
 """
 
 from datetime import datetime, timezone
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from auth import hash_password, verify_password, create_token, get_current_user
-from config import COL_USERS
 from database import get_user_repo
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 
 class RegisterRequest(BaseModel):
-    username: str = Field(..., min_length=3, max_length=50)
-    password: str = Field(..., min_length=4, max_length=100)
+    username: str = Field(..., min_length=3, max_length=64)
+    password: str = Field(..., min_length=4, max_length=128)
 
 
 class LoginRequest(BaseModel):
@@ -24,12 +24,22 @@ class LoginRequest(BaseModel):
     password: str
 
 
+class AuthUser(BaseModel):
+    id: str = Field(alias="_id")
+    username: str
+    role: str
+
+
 class AuthResponse(BaseModel):
     token: str
-    user: dict
+    user: AuthUser
 
 
-@router.post("/register", response_model=AuthResponse)
+@router.post(
+    "/register",
+    response_model=AuthResponse,
+    responses={409: {"description": "Username already exists"}},
+)
 async def register(data: RegisterRequest):
     """Регистрация нового пользователя (роль user)."""
     repo = get_user_repo()
@@ -52,7 +62,11 @@ async def register(data: RegisterRequest):
     )
 
 
-@router.post("/login", response_model=AuthResponse)
+@router.post(
+    "/login",
+    response_model=AuthResponse,
+    responses={401: {"description": "Invalid credentials"}},
+)
 async def login(data: LoginRequest):
     """Вход в систему."""
     repo = get_user_repo()
@@ -71,7 +85,7 @@ async def login(data: LoginRequest):
     )
 
 
-@router.get("/me")
-async def get_me(user: dict = Depends(get_current_user)):
+@router.get("/me", response_model=AuthUser)
+async def get_me(user: Annotated[dict, Depends(get_current_user)]):
     """Получить текущего пользователя по токену."""
-    return user
+    return AuthUser(**user)

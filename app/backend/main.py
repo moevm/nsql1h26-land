@@ -8,11 +8,13 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from config import CORS_ORIGINS
 from database import connect, disconnect, ensure_indexes, seed_admin
 from routes.plots import router as plots_router
 from routes.infrastructure import router as infra_router
 from routes.data_io import router as data_io_router
 from routes.auth import router as auth_router
+from routes.users import router as users_router
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
@@ -40,7 +42,7 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -50,6 +52,7 @@ app.include_router(auth_router)
 app.include_router(plots_router)
 app.include_router(infra_router)
 app.include_router(data_io_router)
+app.include_router(users_router)
 
 
 @app.get("/api/health")

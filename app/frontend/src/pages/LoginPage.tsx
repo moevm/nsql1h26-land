@@ -1,125 +1,118 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
 import { useAuth } from '../contexts/AuthContext';
+import { authFormSchema, type AuthFormValues } from '../features/forms/schemas';
+import { AlertMessage } from '../components/AlertMessage';
+import { PageHeader } from '../components/PageHeader';
+import { Button, FieldError, FieldLabel, Input, Surface } from '../components/ui';
 import { getErrorMessage } from '../utils';
 
 export default function LoginPage() {
   const navigate = useNavigate();
   const { login, register } = useAuth();
   const [isRegister, setIsRegister] = useState(false);
-  const [username, setUsername] = useState('');
-  const [password, setPassword] = useState('');
-  const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
+  const {
+    register: registerField,
+    handleSubmit,
+    reset,
+    formState: { errors, isSubmitting },
+  } = useForm<AuthFormValues>({
+    resolver: zodResolver(authFormSchema),
+    defaultValues: {
+      username: '',
+      password: '',
+    },
+  });
+
+  async function onSubmit(values: AuthFormValues) {
     setError('');
-    setLoading(true);
     try {
       if (isRegister) {
-        await register(username, password);
+        await register(values.username, values.password);
       } else {
-        await login(username, password);
+        await login(values.username, values.password);
       }
       navigate('/');
     } catch (err) {
       setError(getErrorMessage(err));
-    } finally {
-      setLoading(false);
     }
+  }
+
+  let submitLabel = 'Войти';
+  if (isSubmitting) {
+    submitLabel = 'Загрузка...';
+  } else if (isRegister) {
+    submitLabel = 'Зарегистрироваться';
   }
 
   return (
     <div className="max-w-md mx-auto animate-fade-in-up pt-8">
-      <h1
-        className="text-2xl sm:text-3xl font-bold mb-2 text-center"
-        style={{ fontFamily: 'var(--font-display)', color: 'var(--c-heading)' }}
-      >
-        {isRegister ? 'Регистрация' : 'Вход'}
-      </h1>
-      <p className="mb-6 text-sm text-center" style={{ color: 'var(--c-text-muted)' }}>
-        {isRegister
-          ? 'Создайте аккаунт для управления объявлениями'
-          : 'Войдите для редактирования и управления'}
-      </p>
+      <PageHeader
+        title={isRegister ? 'Регистрация' : 'Вход'}
+        subtitle={
+          isRegister
+            ? 'Создайте аккаунт для управления объявлениями'
+            : 'Войдите для редактирования и управления'
+        }
+        titleClassName="text-center"
+        subtitleClassName="text-center"
+      />
 
-      {error && (
-        <div
-          className="px-4 py-3 rounded-xl mb-5 text-sm"
-          style={{ background: 'var(--c-red-dim)', color: 'var(--c-red)', border: '1px solid var(--c-red)' }}
-        >
-          {error}
-        </div>
-      )}
+      <AlertMessage message={error} />
 
       <form
-        onSubmit={handleSubmit}
-        className="rounded-xl p-6 space-y-4"
-        style={{ background: 'var(--c-card)', border: '1px solid var(--c-border)' }}
+        onSubmit={handleSubmit(onSubmit)}
+        className="space-y-4"
       >
-        <div>
-          <label
-            htmlFor="login-username"
-            className="block text-xs mb-1.5 uppercase tracking-wide"
-            style={{ color: 'var(--c-text-muted)', fontFamily: 'var(--font-mono)' }}
-          >
-            Имя пользователя
-          </label>
-          <input
+        <Surface className="p-6 space-y-4">
+          <div>
+            <FieldLabel htmlFor="login-username">Имя пользователя</FieldLabel>
+            <Input
             id="login-username"
             type="text"
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
-            required
-            minLength={3}
-            className="input-field"
+            {...registerField('username')}
             autoComplete="username"
-          />
-        </div>
+            />
+            <FieldError message={errors.username?.message} />
+          </div>
 
-        <div>
-          <label
-            htmlFor="login-password"
-            className="block text-xs mb-1.5 uppercase tracking-wide"
-            style={{ color: 'var(--c-text-muted)', fontFamily: 'var(--font-mono)' }}
-          >
-            Пароль
-          </label>
-          <input
+          <div>
+            <FieldLabel htmlFor="login-password">Пароль</FieldLabel>
+            <Input
             id="login-password"
             type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            required
-            minLength={4}
-            className="input-field"
+            {...registerField('password')}
             autoComplete={isRegister ? 'new-password' : 'current-password'}
-          />
-        </div>
+            />
+            <FieldError message={errors.password?.message} />
+          </div>
 
-        <button type="submit" disabled={loading} className="btn-primary w-full py-3">
-          {loading
-            ? 'Загрузка...'
-            : isRegister
-              ? 'Зарегистрироваться'
-              : 'Войти'}
-        </button>
+          <Button type="submit" disabled={isSubmitting} className="w-full py-3">
+            {submitLabel}
+          </Button>
 
-        <p className="text-center text-sm" style={{ color: 'var(--c-text-muted)' }}>
-          {isRegister ? 'Уже есть аккаунт?' : 'Нет аккаунта?'}{' '}
-          <button
-            type="button"
-            onClick={() => {
-              setIsRegister(!isRegister);
-              setError('');
-            }}
-            className="underline"
-            style={{ color: 'var(--c-accent)' }}
-          >
-            {isRegister ? 'Войти' : 'Зарегистрироваться'}
-          </button>
-        </p>
+          <p className="text-center text-sm" style={{ color: 'var(--c-text-muted)' }}>
+            {isRegister ? 'Уже есть аккаунт?' : 'Нет аккаунта?'}{' '}
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                setIsRegister(!isRegister);
+                reset();
+                setError('');
+              }}
+              className="underline p-0 h-auto min-h-0"
+              style={{ color: 'var(--c-accent)', background: 'transparent', border: 'none' }}
+            >
+              {isRegister ? 'Войти' : 'Зарегистрироваться'}
+            </Button>
+          </p>
+        </Surface>
       </form>
 
       <p

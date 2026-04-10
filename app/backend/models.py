@@ -2,7 +2,7 @@
 Pydantic-модели для запросов и ответов.
 """
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from typing import Optional
 from datetime import datetime
 
@@ -11,35 +11,35 @@ from datetime import datetime
 
 class PlotCreate(BaseModel):
     """Данные для создания объявления."""
-    title: str
+    title: str = Field(..., min_length=3, max_length=180)
     description: str = ""
-    price: float = 0
-    area_sotki: Optional[float] = None
+    price: float = Field(default=0, ge=0)
+    area_sotki: Optional[float] = Field(default=None, ge=0)
     location: str = ""
     address: str = ""
     geo_ref: str = ""
-    lat: float
-    lon: float
+    lat: float = Field(..., ge=-90, le=90)
+    lon: float = Field(..., ge=-180, le=180)
     url: str = ""
     thumbnail: str = ""
-    images_count: int = 0
+    images_count: int = Field(default=0, ge=0)
     was_lowered: bool = False
 
 
 class PlotUpdate(BaseModel):
     """Данные для обновления объявления (все поля опциональны)."""
-    title: Optional[str] = None
+    title: Optional[str] = Field(default=None, min_length=3, max_length=180)
     description: Optional[str] = None
-    price: Optional[float] = None
-    area_sotki: Optional[float] = None
+    price: Optional[float] = Field(default=None, ge=0)
+    area_sotki: Optional[float] = Field(default=None, ge=0)
     location: Optional[str] = None
     address: Optional[str] = None
     geo_ref: Optional[str] = None
-    lat: Optional[float] = None
-    lon: Optional[float] = None
+    lat: Optional[float] = Field(default=None, ge=-90, le=90)
+    lon: Optional[float] = Field(default=None, ge=-180, le=180)
     url: Optional[str] = None
     thumbnail: Optional[str] = None
-    images_count: Optional[int] = None
+    images_count: Optional[int] = Field(default=None, ge=0)
     was_lowered: Optional[bool] = None
 
 
@@ -49,14 +49,19 @@ class PlotDistance(BaseModel):
 
 
 class PlotDistances(BaseModel):
-    nearest_metro: PlotDistance = PlotDistance()
-    nearest_hospital: PlotDistance = PlotDistance()
-    nearest_school: PlotDistance = PlotDistance()
-    nearest_kindergarten: PlotDistance = PlotDistance()
-    nearest_store: PlotDistance = PlotDistance()
-    nearest_pickup_point: PlotDistance = PlotDistance()
-    nearest_bus_stop: PlotDistance = PlotDistance()
-    nearest_negative: PlotDistance = PlotDistance()
+    nearest_metro: PlotDistance = Field(default_factory=PlotDistance)
+    nearest_hospital: PlotDistance = Field(default_factory=PlotDistance)
+    nearest_school: PlotDistance = Field(default_factory=PlotDistance)
+    nearest_kindergarten: PlotDistance = Field(default_factory=PlotDistance)
+    nearest_store: PlotDistance = Field(default_factory=PlotDistance)
+    nearest_pickup_point: PlotDistance = Field(default_factory=PlotDistance)
+    nearest_bus_stop: PlotDistance = Field(default_factory=PlotDistance)
+    nearest_negative: PlotDistance = Field(default_factory=PlotDistance)
+
+
+class PriceHistoryPoint(BaseModel):
+    price: float
+    at: datetime
 
 
 class PlotOut(BaseModel):
@@ -77,7 +82,7 @@ class PlotOut(BaseModel):
     thumbnail: str = ""
     images_count: int = 0
     was_lowered: bool = False
-    features: dict = {}
+    features: dict[str, float] = Field(default_factory=dict)
     feature_score: float = 0
     features_text: str = ""
     distances: Optional[PlotDistances] = None
@@ -90,9 +95,9 @@ class PlotOut(BaseModel):
     owner_name: Optional[str] = None
     combined_score: Optional[float] = None
     jina_score: Optional[float] = None
+    price_history: list[PriceHistoryPoint] = Field(default_factory=list)
 
-    class Config:
-        populate_by_name = True
+    model_config = ConfigDict(populate_by_name=True)
 
 
 class PlotListOut(BaseModel):
@@ -102,32 +107,25 @@ class PlotListOut(BaseModel):
     page: int
     page_size: int
     pages: int
+    has_prev: bool = False
+    has_next: bool = False
 
 
-class SearchQuery(BaseModel):
-    """Параметры поиска."""
-    query: str
-    top_n: int = 20
-    min_price: Optional[float] = None
-    max_price: Optional[float] = None
-    min_area: Optional[float] = None
-    max_area: Optional[float] = None
+class LocationStatsOut(BaseModel):
+    location: str
+    sample_size: int
+    avg_price_per_sotka: Optional[float] = None
+    median_price_per_sotka: Optional[float] = None
+    avg_total_score: Optional[float] = None
 
 
-class SearchResultItem(PlotOut):
-    """Результат поиска с дополнительными скорами."""
-    combined_score: Optional[float] = None
-    jina_score: Optional[float] = None
-
-
-class SearchResultOut(BaseModel):
-    items: list[SearchResultItem]
-    total: int
-    query: str
-    page: int
-    page_size: int
-    pages: int
-    can_expand: bool = False  # есть ещё кандидаты за пределами кэша
+class SellerProfileOut(BaseModel):
+    username: str
+    role: str
+    member_since: Optional[datetime] = None
+    plots_total: int
+    avg_total_score: Optional[float] = None
+    avg_price_per_sotka: Optional[float] = None
 
 
 # ---------- Infrastructure ----------
@@ -146,8 +144,7 @@ class InfraObjectOut(BaseModel):
     lon: float = 0
     type: Optional[str] = None
 
-    class Config:
-        populate_by_name = True
+    model_config = ConfigDict(populate_by_name=True)
 
 
 # ---------- Data IO ----------

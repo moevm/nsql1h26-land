@@ -24,16 +24,18 @@ class PlotRepository:
         query_filter: dict | None = None,
         sort_field: str = "created_at",
         sort_dir: int = -1,
+        sort_fields: list[tuple[str, int]] | None = None,
         skip: int = 0,
         limit: int = 20,
         projection: dict | None = None,
     ) -> list[dict]:
-        cursor = (
-            self._col.find(query_filter or {}, projection)
-            .sort(sort_field, sort_dir)
-            .skip(skip)
-            .limit(limit)
-        )
+        cursor = self._col.find(query_filter or {}, projection)
+        if sort_fields:
+            cursor = cursor.sort(sort_fields)
+        else:
+            cursor = cursor.sort(sort_field, sort_dir)
+
+        cursor = cursor.skip(skip).limit(limit)
         return await cursor.to_list(length=limit)
 
     async def find_by_id(self, oid: ObjectId, projection: dict | None = None) -> dict | None:

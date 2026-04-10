@@ -1,14 +1,8 @@
 import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from 'react';
-import { loginUser, registerUser, getMe, type AuthResult } from '../api';
-
-export interface User {
-  _id: string;
-  username: string;
-  role: 'admin' | 'user';
-}
+import { loginUser, registerUser, getMe, type AuthResult, type AuthUser } from '../api';
 
 interface AuthContextType {
-  user: User | null;
+  user: AuthUser | null;
   loading: boolean;
   login: (username: string, password: string) => Promise<void>;
   register: (username: string, password: string) => Promise<void>;
@@ -26,14 +20,14 @@ const AuthContext = createContext<AuthContextType>({
 });
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<AuthUser | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const token = localStorage.getItem('token');
     if (token) {
       getMe()
-        .then((u) => setUser(u as User))
+        .then((u) => setUser(u))
         .catch(() => localStorage.removeItem('token'))
         .finally(() => setLoading(false));
     } else {
@@ -44,13 +38,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const login = useCallback(async (username: string, password: string) => {
     const result: AuthResult = await loginUser(username, password);
     localStorage.setItem('token', result.token);
-    setUser(result.user as User);
+    setUser(result.user);
   }, []);
 
   const register = useCallback(async (username: string, password: string) => {
     const result: AuthResult = await registerUser(username, password);
     localStorage.setItem('token', result.token);
-    setUser(result.user as User);
+    setUser(result.user);
   }, []);
 
   const logout = useCallback(() => {

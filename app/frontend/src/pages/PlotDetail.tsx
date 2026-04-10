@@ -1,11 +1,67 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { TrainFront, Hospital, School, Baby, ShoppingCart, Package, Bus, AlertTriangle, ArrowLeft, ExternalLink, Pencil } from 'lucide-react';
-import { fetchPlot, deletePlot, type Plot } from '../api';
+import { TrainFront, Hospital, School, Baby, ShoppingCart, Package, Bus, AlertTriangle, ArrowLeft, ExternalLink, Pencil, Heart, GitCompare } from 'lucide-react';
 import { formatPriceFull, getErrorMessage } from '../utils';
+import { AlertMessage } from '../components/AlertMessage';
 import ScoreGauge from '../components/ScoreGauge';
+import { SectionTitle } from '../components/SectionTitle';
 import { useAuth } from '../contexts/AuthContext';
-import { getCached, setCache, invalidateCache } from '../cache';
+import {
+  useDeletePlotMutation,
+  useLocationStatsQuery,
+  usePlotQuery,
+  usePriceHistoryQuery,
+  useSellerProfileQuery,
+} from '../features/plots/hooks';
+import { useUserPrefsStore } from '../stores/userPrefsStore';
+import {
+  Line,
+  LineChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+} from 'recharts';
+import { Button, Surface } from '../components/ui';
+
+const DATE_LABEL_OPTIONS: Intl.DateTimeFormatOptions = {
+  day: 'numeric',
+  month: 'long',
+  year: 'numeric',
+};
+
+const DATE_TIME_OPTIONS: Intl.DateTimeFormatOptions = {
+  day: 'numeric',
+  month: 'long',
+  year: 'numeric',
+  hour: '2-digit',
+  minute: '2-digit',
+};
+
+const DISTANCE_ROW_CONFIG = [
+  { key: 'nearest_metro', icon: TrainFront, label: 'МЕТРО' },
+  { key: 'nearest_hospital', icon: Hospital, label: 'БОЛЬНИЦА' },
+  { key: 'nearest_school', icon: School, label: 'ШКОЛА' },
+  { key: 'nearest_kindergarten', icon: Baby, label: 'ДЕТСАД' },
+  { key: 'nearest_store', icon: ShoppingCart, label: 'МАГАЗИН' },
+  { key: 'nearest_pickup_point', icon: Package, label: 'ПВЗ' },
+  { key: 'nearest_bus_stop', icon: Bus, label: 'АВТОБУС' },
+  { key: 'nearest_negative', icon: AlertTriangle, label: 'НЕГАТИВ' },
+] as const;
+
+function formatDate(value: string | undefined, options: Intl.DateTimeFormatOptions): string | null {
+  if (!value) {
+    return null;
+  }
+
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return null;
+  }
+
+  return parsed.toLocaleDateString('ru-RU', options);
+}
 
 function distanceColor(km: number): string {
   if (km < 5) return 'var(--c-green)';
@@ -17,7 +73,7 @@ function DistanceRow({ icon: Icon, label, name, km }: { readonly icon: React.Ele
   const color = distanceColor(km);
   return (
     <div
-      className="flex items-center justify-between py-3 px-4 rounded-lg transition-colors duration-200 row-hover"
+      className="flex items-center justify-between py-3 px-4 rounded-lg row-hover"
       style={{ borderBottom: '1px solid var(--c-border)' }}
     >
       <div className="flex items-center gap-3">
@@ -37,71 +93,87 @@ function DistanceRow({ icon: Icon, label, name, km }: { readonly icon: React.Ele
   );
 }
 
+function MetaRow({ label, value }: { readonly label: string; readonly value: string | null }) {
+  if (!value) {
+    return null;
+  }
+
+  return (
+    <p className="flex items-start gap-2">
+      <span style={{ color: 'var(--c-text-dim)' }}>{label}:</span>
+      <span style={{ color: 'var(--c-text)' }}>{value}</span>
+    </p>
+  );
+}
+
 export default function PlotDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { user, isAdmin } = useAuth();
-  const [plot, setPlot] = useState<Plot | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-  const [deleting, setDeleting] = useState(false);
+  const [actionError, setActionError] = useState('');
+
+  const isFavorite = useUserPrefsStore((state) => (id ? state.isFavorite(id) : false));
+  const isCompared = useUserPrefsStore((state) => (id ? state.isCompared(id) : false));
+  const toggleFavorite = useUserPrefsStore((state) => state.toggleFavorite);
+  const toggleCompare = useUserPrefsStore((state) => state.toggleCompare);
+
+  const plotQuery = usePlotQuery(id ?? '');
+  const deleteMutation = useDeletePlotMutation({
+    onSuccess: () => {
+      navigate('/');
+    },
+  });
+
+  const plot = plotQuery.data;
+  const loading = plotQuery.isLoading;
+  const error = plotQuery.error ? getErrorMessage(plotQuery.error) : '';
+
+  const priceHistoryQuery = usePriceHistoryQuery(plot?._id ?? '');
+  const locationStatsQuery = useLocationStatsQuery(plot?.location);
+  const sellerProfileQuery = useSellerProfileQuery(plot?.owner_name);
+  const sellerProfileError = sellerProfileQuery.error ? getErrorMessage(sellerProfileQuery.error) : '';
+
+  const priceHistoryData = (priceHistoryQuery.data ?? []).map((point) => ({
+    date: new Date(point.at).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' }),
+    price: point.price,
+  }));
 
   const canEdit = plot && user && (isAdmin || plot.owner_id === user._id);
   const canDelete = canEdit;
 
-  useEffect(() => {
-    if (!id) return;
-    const cacheKey = `plot:${id}`;
-    const cached = getCached<Plot>(cacheKey, 120_000);
-    if (cached) {
-      setPlot(cached);
-      setLoading(false);
-      return;
-    }
-    const controller = new AbortController();
-    fetchPlot(id, controller.signal)
-      .then((p) => { setPlot(p); setCache(cacheKey, p); })
-      .catch((e) => {
-        if (!controller.signal.aborted) setError(getErrorMessage(e));
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setLoading(false);
-      });
-    return () => controller.abort();
-  }, [id]);
-
   async function handleDelete() {
     if (!id || !confirm('Удалить объявление?')) return;
-    setDeleting(true);
+    setActionError('');
     try {
-      await deletePlot(id);
-      invalidateCache('plots');
-      invalidateCache('plot:');
-      invalidateCache('map-plots');
-      navigate('/');
+      await deleteMutation.mutateAsync(id);
     } catch (e) {
-      setError(getErrorMessage(e));
-    } finally {
-      setDeleting(false);
+      setActionError(getErrorMessage(e));
     }
   }
 
-  if (loading) return <p className="text-center py-16" style={{ color: 'var(--c-text-dim)' }}>Загрузка...</p>;
-  if (error) return <p className="text-center py-16" style={{ color: 'var(--c-red)' }}>{error}</p>;
+  if (loading) return <p className="text-center py-16" style={{ color: 'var(--c-text-dim)' }} role="status" aria-live="polite">Загрузка...</p>;
+  if (error) return <p className="text-center py-16" style={{ color: 'var(--c-red)' }} role="alert">{error}</p>;
   if (!plot) return <p className="text-center py-16" style={{ color: 'var(--c-text-dim)' }}>Не найдено</p>;
 
-  const d = plot.distances ?? {} as Record<string, never>;
+  const d = plot.distances;
+  const createdDateLabel = formatDate(plot.created_at, DATE_LABEL_OPTIONS);
+  const updatedDateLabel = formatDate(plot.updated_at, DATE_LABEL_OPTIONS);
+  const createdDateTime = formatDate(plot.created_at, DATE_TIME_OPTIONS);
+  const updatedDateTime = formatDate(plot.updated_at, DATE_TIME_OPTIONS);
+  const sellerMemberSince = formatDate(sellerProfileQuery.data?.member_since, DATE_LABEL_OPTIONS);
 
   return (
     <div className="animate-fade-in-up max-w-5xl mx-auto">
       {/* Back + edit + delete */}
       <div className="flex items-center justify-between mb-6">
-        <button
+        <Button
           onClick={() => navigate(-1)}
-          className="btn-ghost text-sm flex items-center gap-2"
+          variant="ghost"
+          size="sm"
+          className="flex items-center gap-2"
         >
           <ArrowLeft size={16} className="inline-block" /> Назад
-        </button>
+        </Button>
         <div className="flex items-center gap-2">
           {canEdit && (
             <Link
@@ -113,16 +185,56 @@ export default function PlotDetail() {
             </Link>
           )}
           {canDelete && (
-            <button
+            <Button
               onClick={handleDelete}
-              disabled={deleting}
-              className="btn-danger text-sm"
+              disabled={deleteMutation.isPending}
+              variant="danger"
+              size="sm"
             >
-              {deleting ? 'Удаление...' : 'Удалить'}
-            </button>
+              {deleteMutation.isPending ? 'Удаление...' : 'Удалить'}
+            </Button>
           )}
         </div>
       </div>
+
+      <div className="flex flex-wrap gap-2 mb-6">
+        {id && (
+          <>
+            <Button
+              type="button"
+              onClick={() => toggleFavorite(id)}
+              variant="ghost"
+              size="sm"
+              className="flex items-center gap-2"
+              style={{
+                color: isFavorite ? 'var(--c-red)' : 'var(--c-text-muted)',
+                borderColor: isFavorite ? 'var(--c-red)' : 'var(--c-border)',
+              }}
+              aria-label={isFavorite ? 'Убрать из избранного' : 'Добавить в избранное'}
+            >
+              <Heart size={14} fill={isFavorite ? 'currentColor' : 'none'} />
+              {isFavorite ? 'В избранном' : 'В избранное'}
+            </Button>
+            <Button
+              type="button"
+              onClick={() => toggleCompare(id)}
+              variant="ghost"
+              size="sm"
+              className="flex items-center gap-2"
+              style={{
+                color: isCompared ? 'var(--c-blue)' : 'var(--c-text-muted)',
+                borderColor: isCompared ? 'var(--c-blue)' : 'var(--c-border)',
+              }}
+              aria-label={isCompared ? 'Убрать из сравнения' : 'Добавить в сравнение'}
+            >
+              <GitCompare size={14} />
+              {isCompared ? 'В сравнении' : 'Добавить в сравнение'}
+            </Button>
+          </>
+        )}
+      </div>
+
+      <AlertMessage message={actionError} />
 
       {/* Title section */}
       <div className="mb-8">
@@ -135,13 +247,9 @@ export default function PlotDetail() {
         <p className="text-sm" style={{ color: 'var(--c-text-muted)' }}>
           {plot.location} · {plot.address}
         </p>
-        {(plot.created_at || plot.updated_at) && (
+        {(createdDateLabel || updatedDateLabel) && (
           <p className="text-xs mt-2" style={{ color: 'var(--c-text-dim)', fontFamily: 'var(--font-mono)' }}>
-            {plot.updated_at
-              ? `Изменено ${new Date(plot.updated_at).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' })}`
-              : plot.created_at
-                ? `Создано ${new Date(plot.created_at).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' })}`
-                : ''}
+            {updatedDateLabel ? `Изменено ${updatedDateLabel}` : createdDateLabel ? `Создано ${createdDateLabel}` : ''}
           </p>
         )}
       </div>
@@ -151,16 +259,13 @@ export default function PlotDetail() {
         <div className="lg:col-span-3 space-y-5">
           {/* Image */}
           {plot.thumbnail && (
-            <div className="rounded-xl overflow-hidden" style={{ border: '1px solid var(--c-border)' }}>
+            <Surface className="overflow-hidden">
               <img src={plot.thumbnail} alt={plot.title} className="w-full max-h-80 object-cover" />
-            </div>
+            </Surface>
           )}
 
           {/* Price & area */}
-          <div
-            className="rounded-xl p-5"
-            style={{ background: 'var(--c-card)', border: '1px solid var(--c-border)' }}
-          >
+          <Surface className="p-5">
             <div className="flex items-baseline gap-4 flex-wrap">
               <span
                 className="text-2xl font-bold"
@@ -186,36 +291,76 @@ export default function PlotDetail() {
                 </span>
               )}
             </div>
-          </div>
+          </Surface>
+
+          {/* Price history */}
+          <Surface className="p-5">
+            <SectionTitle className="mb-3">История цены</SectionTitle>
+            {priceHistoryQuery.isLoading && (
+              <p className="text-sm" style={{ color: 'var(--c-text-dim)' }}>Загрузка истории цены...</p>
+            )}
+            {!priceHistoryQuery.isLoading && priceHistoryData.length <= 1 && (
+              <p className="text-sm" style={{ color: 'var(--c-text-dim)' }}>Недостаточно данных для графика</p>
+            )}
+            {!priceHistoryQuery.isLoading && priceHistoryData.length > 1 && (
+              <div style={{ width: '100%', height: 220 }}>
+                <ResponsiveContainer>
+                  <LineChart data={priceHistoryData} margin={{ top: 8, right: 8, left: 8, bottom: 8 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="var(--c-border)" />
+                    <XAxis dataKey="date" stroke="var(--c-text-dim)" fontSize={11} />
+                    <YAxis stroke="var(--c-text-dim)" fontSize={11} />
+                    <Tooltip
+                      formatter={(value) => (typeof value === 'number' ? formatPriceFull(value) : String(value ?? ''))}
+                      labelStyle={{ color: 'var(--c-text-dim)' }}
+                      contentStyle={{
+                        background: 'var(--c-surface)',
+                        border: '1px solid var(--c-border)',
+                        color: 'var(--c-text)',
+                      }}
+                    />
+                    <Line type="monotone" dataKey="price" stroke="var(--c-accent)" strokeWidth={2} dot={false} />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+            )}
+          </Surface>
+
+          {/* Location analytics */}
+          <Surface className="p-5">
+            <SectionTitle className="mb-3">Районная аналитика</SectionTitle>
+            {locationStatsQuery.isLoading && (
+              <p className="text-sm" style={{ color: 'var(--c-text-dim)' }}>Считаем статистику локации...</p>
+            )}
+            {locationStatsQuery.data && (
+              <div className="space-y-1 text-sm" style={{ color: 'var(--c-text)' }}>
+                <p>Выборка: {locationStatsQuery.data.sample_size} объявлений</p>
+                <p>
+                  Средняя цена за сотку: {locationStatsQuery.data.avg_price_per_sotka
+                    ? formatPriceFull(locationStatsQuery.data.avg_price_per_sotka)
+                    : '—'}
+                </p>
+                <p>
+                  Медианная цена за сотку: {locationStatsQuery.data.median_price_per_sotka
+                    ? formatPriceFull(locationStatsQuery.data.median_price_per_sotka)
+                    : '—'}
+                </p>
+                <p>Средний общий скор: {locationStatsQuery.data.avg_total_score?.toFixed(3) ?? '—'}</p>
+              </div>
+            )}
+          </Surface>
 
           {/* Description */}
-          <div
-            className="rounded-xl p-5"
-            style={{ background: 'var(--c-card)', border: '1px solid var(--c-border)' }}
-          >
-            <h2
-              className="text-lg font-semibold mb-3"
-              style={{ fontFamily: 'var(--font-display)', color: 'var(--c-heading)' }}
-            >
-              Описание
-            </h2>
+          <Surface className="p-5">
+            <SectionTitle className="mb-3">Описание</SectionTitle>
             <p className="whitespace-pre-line leading-relaxed text-sm" style={{ color: 'var(--c-text)' }}>
               {plot.description}
             </p>
-          </div>
+          </Surface>
 
           {/* Features */}
           {plot.features_text && (
-            <div
-              className="rounded-xl p-5"
-              style={{ background: 'var(--c-card)', border: '1px solid var(--c-border)' }}
-            >
-              <h2
-                className="text-lg font-semibold mb-3"
-                style={{ fontFamily: 'var(--font-display)', color: 'var(--c-heading)' }}
-              >
-                Характеристики
-              </h2>
+            <Surface className="p-5">
+              <SectionTitle className="mb-3">Характеристики</SectionTitle>
               <div className="flex flex-wrap gap-2">
                 {plot.features_text.split(', ').map((f) => (
                   <span
@@ -231,7 +376,7 @@ export default function PlotDetail() {
                   </span>
                 ))}
               </div>
-            </div>
+            </Surface>
           )}
 
           {/* URL */}
@@ -240,7 +385,7 @@ export default function PlotDetail() {
               href={plot.url}
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center gap-2 text-sm transition-colors duration-200"
+              className="inline-flex items-center gap-2 text-sm motion-unified"
               style={{ color: 'var(--c-accent)' }}
               onMouseEnter={(e) => e.currentTarget.style.color = 'var(--c-accent-hover)'}
               onMouseLeave={(e) => e.currentTarget.style.color = 'var(--c-accent)'}
@@ -253,65 +398,90 @@ export default function PlotDetail() {
         {/* Right: analytics (2 cols) */}
         <div className="lg:col-span-2 space-y-5">
           {/* Score gauges */}
-          <div
-            className="rounded-xl p-5"
-            style={{ background: 'var(--c-card)', border: '1px solid var(--c-border)' }}
-          >
-            <h2
-              className="text-lg font-semibold mb-5"
-              style={{ fontFamily: 'var(--font-display)', color: 'var(--c-heading)' }}
-            >
-              Аналитика
-            </h2>
+          <Surface className="p-5">
+            <SectionTitle className="mb-5">Аналитика</SectionTitle>
             <div className="grid grid-cols-2 gap-4 justify-items-center">
               <ScoreGauge value={plot.total_score} label="Общий" size={80} color="var(--c-accent)" />
               <ScoreGauge value={plot.infra_score} label="Инфра" size={80} color="var(--c-blue)" />
               <ScoreGauge value={plot.negative_score} label="Экология" size={80} color="var(--c-green)" />
               <ScoreGauge value={plot.feature_score} label="Хар-ки" size={80} color="var(--c-yellow)" />
             </div>
-          </div>
+          </Surface>
 
           {/* Distances */}
           {plot.distances && (
-          <div
-            className="rounded-xl p-5"
-            style={{ background: 'var(--c-card)', border: '1px solid var(--c-border)' }}
-          >
-            <h2
-              className="text-lg font-semibold mb-3"
-              style={{ fontFamily: 'var(--font-display)', color: 'var(--c-heading)' }}
-            >
-              Расстояния
-            </h2>
-            <div className="space-y-0">
-              <DistanceRow icon={TrainFront} label="МЕТРО" name={d.nearest_metro?.name} km={d.nearest_metro?.km} />
-              <DistanceRow icon={Hospital} label="БОЛЬНИЦА" name={d.nearest_hospital?.name} km={d.nearest_hospital?.km} />
-              <DistanceRow icon={School} label="ШКОЛА" name={d.nearest_school?.name} km={d.nearest_school?.km} />
-              <DistanceRow icon={Baby} label="ДЕТСАД" name={d.nearest_kindergarten?.name} km={d.nearest_kindergarten?.km} />
-              <DistanceRow icon={ShoppingCart} label="МАГАЗИН" name={d.nearest_store?.name} km={d.nearest_store?.km} />
-              <DistanceRow icon={Package} label="ПВЗ" name={d.nearest_pickup_point?.name} km={d.nearest_pickup_point?.km} />
-              <DistanceRow icon={Bus} label="АВТОБУС" name={d.nearest_bus_stop?.name} km={d.nearest_bus_stop?.km} />
-              <DistanceRow icon={AlertTriangle} label="НЕГАТИВ" name={d.nearest_negative?.name} km={d.nearest_negative?.km} />
-            </div>
-          </div>
+            <Surface className="p-5">
+              <SectionTitle className="mb-3">Расстояния</SectionTitle>
+              <div className="space-y-0">
+                {DISTANCE_ROW_CONFIG.map((item) => {
+                  const distance = d?.[item.key];
+                  return (
+                    <DistanceRow
+                      key={item.key}
+                      icon={item.icon}
+                      label={item.label}
+                      name={distance?.name ?? ''}
+                      km={distance?.km ?? 0}
+                    />
+                  );
+                })}
+              </div>
+            </Surface>
           )}
 
-          {/* Coordinates */}
-          <div
-            className="rounded-xl p-4 text-xs"
+          {/* Seller */}
+          <Surface className="p-5">
+            <SectionTitle className="mb-3">Продавец</SectionTitle>
+            {sellerProfileQuery.isLoading && (
+              <p className="text-sm" style={{ color: 'var(--c-text-dim)' }}>
+                Загружаем профиль продавца...
+              </p>
+            )}
+            {!sellerProfileQuery.isLoading && sellerProfileError && (
+              <p className="text-sm" style={{ color: 'var(--c-red)' }}>
+                {sellerProfileError}
+              </p>
+            )}
+            {!sellerProfileQuery.isLoading && !sellerProfileError && sellerProfileQuery.data && (
+              <div className="space-y-2 text-sm" style={{ color: 'var(--c-text)' }}>
+                <MetaRow label="Пользователь" value={sellerProfileQuery.data.username} />
+                <MetaRow label="Роль" value={sellerProfileQuery.data.role === 'admin' ? 'Администратор' : 'Пользователь'} />
+                <MetaRow label="Объявлений" value={String(sellerProfileQuery.data.plots_total)} />
+                <MetaRow label="Средний score" value={sellerProfileQuery.data.avg_total_score?.toFixed(3) ?? '—'} />
+                <MetaRow
+                  label="Средняя цена за сотку"
+                  value={sellerProfileQuery.data.avg_price_per_sotka ? formatPriceFull(sellerProfileQuery.data.avg_price_per_sotka) : '—'}
+                />
+                <MetaRow label="С нами с" value={sellerMemberSince ?? '—'} />
+              </div>
+            )}
+            {!sellerProfileQuery.isLoading && !sellerProfileError && !sellerProfileQuery.data && (
+              <p className="text-sm" style={{ color: 'var(--c-text-dim)' }}>
+                {plot.owner_name ? 'Профиль продавца недоступен' : 'Владелец не указан'}
+              </p>
+            )}
+          </Surface>
+
+          {/* Metadata */}
+          <Surface
+            className="p-5 text-xs"
             style={{
-              background: 'var(--c-card)',
-              border: '1px solid var(--c-border)',
               color: 'var(--c-text-dim)',
               fontFamily: 'var(--font-mono)',
             }}
           >
-            <p>COORD {plot.lat?.toFixed(6)}, {plot.lon?.toFixed(6)}</p>
-            {plot.avito_id && <p className="mt-1">AVITO #{plot.avito_id}</p>}
-            {plot.owner_name && <p className="mt-1">OWNER: {plot.owner_name}</p>}
-            {plot.created_at && <p className="mt-1">СОЗДАНО: {new Date(plot.created_at).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</p>}
-            {plot.updated_at && <p className="mt-1">ИЗМЕНЕНО: {new Date(plot.updated_at).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</p>}
-          </div>
+            <SectionTitle className="mb-3">Служебные данные</SectionTitle>
+              <div className="space-y-1.5">
+                <MetaRow
+                  label="Координаты"
+                  value={plot.lat !== undefined && plot.lon !== undefined ? `${plot.lat.toFixed(6)}, ${plot.lon.toFixed(6)}` : null}
+                />
+              <MetaRow label="AVITO ID" value={plot.avito_id ? String(plot.avito_id) : null} />
+              <MetaRow label="OWNER" value={plot.owner_name || null} />
+              <MetaRow label="Создано" value={createdDateTime} />
+              <MetaRow label="Изменено" value={updatedDateTime} />
+            </div>
+          </Surface>
         </div>
       </div>
     </div>
