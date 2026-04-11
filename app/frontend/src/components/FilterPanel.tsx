@@ -222,6 +222,11 @@ export default function FilterPanel({ visible, filters, initialForm, onApply, on
               Инфра ≥ {filters.min_infra}
             </span>
           )}
+          {filters.min_feature !== undefined && (
+            <span className="text-xs px-2.5 py-1 rounded-lg" style={{ background: 'var(--c-green-dim)', color: 'var(--c-green)' }}>
+              Хар-ки ≥ {filters.min_feature}
+            </span>
+          )}
           {filters.location && (
             <span className="text-xs px-2.5 py-1 rounded-lg" style={{ background: 'var(--c-accent-dim)', color: 'var(--c-accent)' }}>
               {filters.location}

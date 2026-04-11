@@ -7,9 +7,9 @@ import ScoreGauge from '../components/ScoreGauge';
 import Pagination from '../components/Pagination';
 import FilterPanel, { type FormState } from '../components/FilterPanel';
 import { PageHeader } from '../components/PageHeader';
-import { usePlotsListQuery, usePrefetchPlotDetail, usePrefetchPlotsListPage } from '../features/plots/hooks';
+import { usePlotsListQuery, usePrefetchPlotDetail } from '../features/plots/hooks';
 import { useUserPrefsStore } from '../stores/userPrefsStore';
-import { Button, Input } from '../components/ui';
+import { Button, Input, Surface } from '../components/ui';
 
 function PlotCard({
   plot,
@@ -120,21 +120,20 @@ function PlotCard({
           )}
         </div>
 
-        {/* Micro-scores row */}
+        {/* Analytics labels */}
         <div className="flex flex-wrap gap-2 mt-auto">
           {[
-            { v: plot.infra_score, l: 'И', c: 'var(--c-blue)' },
-            { v: plot.negative_score, l: 'Э', c: 'var(--c-green)' },
-            { v: plot.feature_score, l: 'Х', c: 'var(--c-accent)' },
+            { v: plot.infra_score, l: 'Инфра', c: 'var(--c-blue)' },
+            { v: plot.negative_score, l: 'Эко', c: 'var(--c-green)' },
+            { v: plot.feature_score, l: 'Хар-ки', c: 'var(--c-accent)' },
           ].map((s) => (
             <span
               key={s.l}
-              className="text-xs px-2 py-0.5 rounded-md"
+              className="text-[10px] px-2 py-0.5 rounded-md whitespace-nowrap"
               style={{
                 background: `color-mix(in srgb, ${s.c} 12%, transparent)`,
                 color: s.c,
                 fontFamily: 'var(--font-mono)',
-                fontSize: '0.65rem',
               }}
             >
               {s.l} {(s.v * 100).toFixed(0)}
@@ -142,28 +141,26 @@ function PlotCard({
           ))}
           {semanticMode && plot.jina_score != null && (
             <span
-              className="text-xs px-2 py-0.5 rounded-md"
+              className="text-[10px] px-2 py-0.5 rounded-md whitespace-nowrap"
               style={{
                 background: 'var(--c-blue-dim)',
                 color: 'var(--c-blue)',
                 fontFamily: 'var(--font-mono)',
-                fontSize: '0.65rem',
               }}
             >
-              J {(plot.jina_score * 100).toFixed(0)}
+              Jina {(plot.jina_score * 100).toFixed(0)}
             </span>
           )}
           {semanticMode && plot.combined_score != null && (
             <span
-              className="text-xs px-2 py-0.5 rounded-md"
+              className="text-[10px] px-2 py-0.5 rounded-md whitespace-nowrap"
               style={{
                 background: 'var(--c-green-dim)',
                 color: 'var(--c-green)',
                 fontFamily: 'var(--font-mono)',
-                fontSize: '0.65rem',
               }}
             >
-              C {(plot.combined_score * 100).toFixed(0)}
+              Комб {(plot.combined_score * 100).toFixed(0)}
             </span>
           )}
         </div>
@@ -209,6 +206,50 @@ function PlotCard({
 }
 
 const MemoPlotCard = memo(PlotCard);
+
+const SKELETON_CARD_IDS = ['one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight'] as const;
+
+function PlotCardSkeleton({ index }: { readonly index: number }) {
+  return (
+    <Surface
+      className="overflow-hidden h-full flex flex-col"
+      style={{ animationDelay: `${index * 45}ms` }}
+    >
+      <div className="h-44 animate-pulse" style={{ background: 'var(--c-surface-hover)' }} />
+      <div className="p-4 space-y-3">
+        <div className="h-4 rounded-md animate-pulse" style={{ background: 'var(--c-surface-hover)' }} />
+        <div className="h-4 rounded-md w-4/5 animate-pulse" style={{ background: 'var(--c-surface-hover)' }} />
+        <div className="h-10 rounded-lg animate-pulse" style={{ background: 'var(--c-surface-hover)' }} />
+        <div className="flex gap-2">
+          <div className="h-5 w-14 rounded-md animate-pulse" style={{ background: 'var(--c-surface-hover)' }} />
+          <div className="h-5 w-14 rounded-md animate-pulse" style={{ background: 'var(--c-surface-hover)' }} />
+          <div className="h-5 w-14 rounded-md animate-pulse" style={{ background: 'var(--c-surface-hover)' }} />
+        </div>
+      </div>
+      <div className="px-4 pb-4 grid grid-cols-2 gap-2 mt-auto">
+        <div className="h-8 rounded-md animate-pulse" style={{ background: 'var(--c-surface-hover)' }} />
+        <div className="h-8 rounded-md animate-pulse" style={{ background: 'var(--c-surface-hover)' }} />
+      </div>
+    </Surface>
+  );
+}
+
+function ResultsLoadingScreen({ semanticMode }: { readonly semanticMode: boolean }) {
+  return (
+    <section className="py-3" role="status" aria-live="polite" aria-label="Загрузка результатов поиска">
+      <div className="mb-5">
+        <p className="text-sm" style={{ color: 'var(--c-text-muted)' }}>
+          {semanticMode ? 'Выполняем семантический поиск и ранжирование...' : 'Загружаем объявления...'}
+        </p>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5 stagger-children">
+        {SKELETON_CARD_IDS.map((id, index) => (
+          <PlotCardSkeleton key={id} index={index} />
+        ))}
+      </div>
+    </section>
+  );
+}
 
 const FILTER_PARAM_KEYS: Array<keyof FormState> = [
   'min_price',
@@ -353,15 +394,9 @@ export default function PlotsList() {
 
   const data = plotsQuery.data ?? null;
   const loading = plotsQuery.isLoading;
+  const showResultsLoading = loading || (plotsQuery.isFetching && plotsQuery.isPlaceholderData);
   const error = plotsQuery.error ? getErrorMessage(plotsQuery.error) : '';
   const prefetchPlotDetail = usePrefetchPlotDetail();
-  const prefetchPlotsPage = usePrefetchPlotsListPage({
-    pageSize: 20,
-    sort: sortField,
-    order: sortOrder,
-    query: queryParam,
-    filters,
-  });
 
   function handleSearch(e: React.SyntheticEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -421,14 +456,6 @@ export default function PlotsList() {
       changePage(data.pages, true);
     }
   }, [currentPage, data, changePage]);
-
-  useEffect(() => {
-    if (!data || currentPage >= data.pages) {
-      return;
-    }
-
-    void prefetchPlotsPage(currentPage + 1);
-  }, [currentPage, data, prefetchPlotsPage]);
 
   function changeSort(field: string) {
     if (field === 'relevance' && !queryParam) return;
@@ -576,23 +603,19 @@ export default function PlotsList() {
       />
 
       {/* Loading / Error */}
-      {loading && (
-        <p className="text-center py-16" style={{ color: 'var(--c-text-dim)' }} role="status" aria-live="polite">
-          Загрузка...
-        </p>
-      )}
+      {showResultsLoading && <ResultsLoadingScreen semanticMode={Boolean(queryParam)} />}
       {error && (
         <p className="text-center py-16" style={{ color: 'var(--c-red)' }} role="alert">{error}</p>
       )}
 
-      {data?.items.length === 0 && (
+      {!showResultsLoading && data?.items.length === 0 && (
         <p className="text-center py-16" style={{ color: 'var(--c-text-dim)' }}>
           {queryParam ? 'Ничего не найдено по запросу' : 'Нет объявлений'}
         </p>
       )}
 
       {/* Grid */}
-      {data && data.items.length > 0 && (
+      {!showResultsLoading && data && data.items.length > 0 && (
         <>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5 stagger-children">
             {data.items.map((p, i) => (

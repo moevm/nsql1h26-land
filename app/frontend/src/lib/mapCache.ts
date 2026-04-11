@@ -2,7 +2,7 @@ import { del, get, set } from 'idb-keyval';
 
 import type { MapDataset } from '../api';
 
-const MAP_CACHE_KEY = 'land-plots-map-dataset-v1';
+const MAP_CACHE_KEY = 'land-plots-map-dataset-v2';
 const MAP_CACHE_TTL_MS = 30 * 60_000;
 
 type MapCachePayload = {

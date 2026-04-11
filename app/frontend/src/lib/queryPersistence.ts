@@ -2,11 +2,9 @@ import type { Query } from '@tanstack/react-query';
 import { createSyncStoragePersister } from '@tanstack/query-sync-storage-persister';
 
 const QUERY_PERSIST_KEY = 'land-plots-query-cache-v1';
-const QUERY_PERSIST_MAX_AGE_MS = 45 * 60_000;
+const QUERY_PERSIST_MAX_AGE_MS = 20 * 60_000;
 const PLOT_QUERY_SCOPES = new Set([
-  'list',
   'detail',
-  'my',
   'price-history',
   'location-stats',
 ]);
@@ -25,7 +23,7 @@ function shouldPersistQuery(query: Query): boolean {
 }
 
 const persister = createSyncStoragePersister({
-  storage: window.localStorage,
+  storage: globalThis.localStorage,
   key: QUERY_PERSIST_KEY,
   throttleTime: 1_000,
 });

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   useMutation,
   useQuery,
@@ -134,14 +134,56 @@ export function useMapPlotsQuery({
   pageSize?: number;
   concurrency?: number;
 } = {}) {
+  const queryClient = useQueryClient();
+  const isMountedRef = useRef(true);
+  const backgroundRefreshRef = useRef<Promise<void> | null>(null);
   const [progress, setProgress] = useState<MapProgress>(EMPTY_MAP_PROGRESS);
+
+  useEffect(() => () => {
+    isMountedRef.current = false;
+  }, []);
 
   const query = useQuery({
     queryKey: plotsQueryKeys.map({ pageSize, concurrency }),
-    queryFn: async ({ signal }) => {
+    queryFn: async ({ signal, queryKey }) => {
       const cached = await readMapCache();
       if (cached) {
         setProgress(toCompletedMapProgress(cached, true));
+
+        backgroundRefreshRef.current ??= (async () => {
+          try {
+            const freshDataset = await fetchAllPlotsForMap({
+              pageSize,
+              concurrency,
+              onProgress: ({ loadedPages, totalPages, total }) => {
+                if (!isMountedRef.current) {
+                  return;
+                }
+
+                setProgress({
+                  loadedPages,
+                  totalPages,
+                  total,
+                  fromCache: false,
+                });
+              },
+            });
+
+            await writeMapCache(freshDataset);
+            queryClient.setQueryData(queryKey, freshDataset);
+          } catch (error) {
+            if (
+              !(error instanceof Error && error.name === 'AbortError')
+              && isMountedRef.current
+            ) {
+              // Keep cached data visible if background refresh fails.
+              setProgress(toCompletedMapProgress(cached, true));
+            }
+          } finally {
+            backgroundRefreshRef.current = null;
+          }
+        })();
+
         return cached;
       }
 
@@ -167,6 +209,7 @@ export function useMapPlotsQuery({
     gcTime: MAP_GC_TIME_MS,
     retry: 1,
     refetchOnWindowFocus: false,
+    refetchOnMount: 'always',
   });
 
   useEffect(() => {

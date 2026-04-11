@@ -26,6 +26,7 @@ from config import (
     JINA_RERANK_MODEL,
     JINA_RERANK_URL,
     JINA_SCORE_THRESHOLD,
+    SEARCH_JINA_TOP_N,
     SEARCH_VECTOR_TOP_K,
 )
 from repositories.plot_repository import PlotRepository
@@ -157,6 +158,56 @@ def _evict_expired() -> None:
 # --------------- Jina Reranker ---------------
 
 
+def _extract_jina_scores(results: list[dict], candidate_count: int) -> dict[int, float]:
+    scores_by_index: dict[int, float] = {}
+    for item in results:
+        index = item.get("index")
+        score = item.get("relevance_score")
+        if not isinstance(index, int):
+            continue
+        if index < 0 or index >= candidate_count:
+            continue
+
+        try:
+            score_value = float(score)
+        except (TypeError, ValueError):
+            continue
+
+        previous = scores_by_index.get(index)
+        scores_by_index[index] = max(previous, score_value) if previous is not None else score_value
+
+    return scores_by_index
+
+
+def _merge_scored_candidates(
+    candidates: list[dict],
+    scores_by_index: dict[int, float],
+    limit: int,
+) -> list[dict]:
+    sorted_scored_indexes = sorted(
+        scores_by_index,
+        key=lambda index: scores_by_index[index],
+        reverse=True,
+    )
+
+    reranked: list[dict] = []
+    seen_indexes = set()
+    for index in sorted_scored_indexes:
+        candidate = candidates[index].copy()
+        candidate["jina_score"] = round(scores_by_index[index], 4)
+        reranked.append(candidate)
+        seen_indexes.add(index)
+
+    for index, candidate in enumerate(candidates):
+        if index in seen_indexes:
+            continue
+        fallback_candidate = candidate.copy()
+        fallback_candidate.setdefault("jina_score", 0.0)
+        reranked.append(fallback_candidate)
+
+    return reranked[:limit]
+
+
 async def jina_rerank(
     query: str,
     candidates: list[dict],
@@ -178,11 +229,14 @@ async def jina_rerank(
             doc_text += f"\nХарактеристики: {features_text}"
         documents.append(doc_text[:4000])
 
+    requested_top_n = min(top_n, len(documents))
+    api_top_n = min(requested_top_n, SEARCH_JINA_TOP_N)
+
     payload = {
         "model": JINA_RERANK_MODEL,
         "query": query.lower(),
         "documents": documents,
-        "top_n": min(top_n, len(documents)),
+        "top_n": api_top_n,
     }
     headers = {
         "Authorization": f"Bearer {JINA_API_KEY}",
@@ -191,7 +245,8 @@ async def jina_rerank(
     }
 
     try:
-        async with httpx.AsyncClient(timeout=30) as client:
+        timeout = httpx.Timeout(connect=3.0, read=8.0, write=8.0, pool=8.0)
+        async with httpx.AsyncClient(timeout=timeout) as client:
             response = await client.post(
                 JINA_RERANK_URL,
                 json=payload,
@@ -201,17 +256,12 @@ async def jina_rerank(
         data = response.json()
     except httpx.HTTPError as error:
         logger.error("Jina Reranker error: %s", error)
-        return candidates[:top_n]
+        return candidates[:requested_top_n]
 
-    reranked: list[dict] = []
-    for item in data.get("results", []):
-        index = item["index"]
-        score = item["relevance_score"]
-        candidate = candidates[index].copy()
-        candidate["jina_score"] = round(float(score), 4)
-        reranked.append(candidate)
-
-    return reranked[:top_n]
+    # Jina иногда возвращает только часть документов (top_n), поэтому
+    # доклеиваем остальные в исходном порядке, чтобы не терять выдачу.
+    scores_by_index = _extract_jina_scores(data.get("results", []), len(candidates))
+    return _merge_scored_candidates(candidates, scores_by_index, requested_top_n)
 
 
 def _prioritize_by_threshold(results: list[dict], threshold: float) -> list[dict]:
