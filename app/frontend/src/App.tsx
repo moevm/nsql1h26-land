@@ -5,13 +5,13 @@ import {
   GitCompare,
   LayoutGrid,
   List,
-  LogIn,
   LogOut,
   Map,
   PlusSquare,
   Shield,
   User,
 } from 'lucide-react';
+import { IconMap2 } from '@tabler/icons-react';
 import { Link, NavLink, Route, Routes, useLocation } from 'react-router-dom';
 
 import ErrorBoundary from './components/ErrorBoundary';
@@ -42,7 +42,7 @@ type NavItem = {
 
 export default function App() {
   const location = useLocation();
-  const { user, logout, isAdmin } = useAuth();
+  const { user, loading, logout, isAdmin } = useAuth();
   const compareCount = useUserPrefsStore((state) => state.comparePlotIds.length);
   const compareLabel = compareCount ? `Сравнение (${compareCount})` : 'Сравнение';
 
@@ -52,17 +52,45 @@ export default function App() {
     </ErrorBoundary>
   );
 
+  // Пока идёт проверка токена — показываем скелетон, а не форму входа
+  // (иначе пользователь с валидным токеном увидит флеш логина).
+  if (loading) {
+    return (
+      <div className="app-shell min-h-screen flex items-center justify-center">
+        <RouteSkeleton />
+      </div>
+    );
+  }
+
+  // Гейт: без авторизации доступна только страница входа.
+  if (!user) {
+    return (
+      <div className="app-shell min-h-screen flex flex-col">
+        <main className="flex-1 max-w-7xl mx-auto px-4 sm:px-6 lg:px-10 py-10 w-full">
+          <Suspense fallback={<RouteSkeleton />}>
+            <LoginPage />
+          </Suspense>
+        </main>
+        <footer
+          className="mt-auto py-6 text-center text-[11px] tracking-[0.2em]"
+          style={{
+            color: 'var(--c-text-dim)',
+            borderTop: '1px solid var(--c-border)',
+            fontFamily: 'var(--font-mono)',
+          }}
+        >
+          LAND PLOTS SERVICE
+        </footer>
+      </div>
+    );
+  }
+
   const navLinks: NavItem[] = [
     { to: '/', label: 'Каталог', Icon: LayoutGrid, show: true, end: true },
     { to: '/map', label: 'Карта', Icon: Map, show: true },
-    {
-      to: '/compare',
-      label: compareLabel,
-      Icon: GitCompare,
-      show: true,
-    },
-    { to: '/add', label: 'Новый участок', Icon: PlusSquare, show: Boolean(user) },
-    { to: '/my', label: 'Мои объявления', Icon: List, show: Boolean(user) },
+    { to: '/compare', label: compareLabel, Icon: GitCompare, show: true },
+    { to: '/add', label: 'Новый участок', Icon: PlusSquare, show: true },
+    { to: '/my', label: 'Мои объявления', Icon: List, show: true },
     { to: '/admin', label: 'Панель данных', Icon: Database, show: isAdmin },
   ];
 
@@ -76,7 +104,9 @@ export default function App() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-10">
           <div className="flex items-center justify-between gap-2 min-h-16 py-2 flex-wrap">
             <Link to="/" className="flex items-center gap-3 no-underline shrink-0">
-              <span className="app-brand-mark">ЗУ</span>
+              <span className="app-brand-mark" aria-label="Земельные участки">
+                <IconMap2 size={22} stroke={1.75} />
+              </span>
               <span
                 className="text-base sm:text-lg tracking-tight hidden sm:inline"
                 style={{
@@ -106,38 +136,31 @@ export default function App() {
                   ))}
               </nav>
 
-              {user ? (
-                <div className="flex items-center gap-2">
-                  <span
-                    className="app-user-chip inline-flex items-center gap-1.5"
-                    style={{
-                      background: isAdmin ? 'var(--c-accent-dim)' : 'var(--c-blue-dim)',
-                      color: isAdmin ? 'var(--c-accent)' : 'var(--c-blue)',
-                    }}
-                  >
-                    {isAdmin ? <Shield size={12} /> : <User size={12} />}
-                    {user.username}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={logout}
-                    className="btn-ghost px-2! py-1.5!"
-                    style={{
-                      color: 'var(--c-text-muted)',
-                      borderColor: 'var(--c-border)',
-                    }}
-                    title="Выйти"
-                    aria-label="Выйти из аккаунта"
-                  >
-                    <LogOut size={15} />
-                  </button>
-                </div>
-              ) : (
-                <NavLink to="/login" className="app-nav-link">
-                  <LogIn size={15} />
-                  <span>Войти</span>
-                </NavLink>
-              )}
+              <div className="flex items-center gap-2">
+                <span
+                  className="app-user-chip inline-flex items-center gap-1.5"
+                  style={{
+                    background: isAdmin ? 'var(--c-accent-dim)' : 'var(--c-blue-dim)',
+                    color: isAdmin ? 'var(--c-accent)' : 'var(--c-blue)',
+                  }}
+                >
+                  {isAdmin ? <Shield size={12} /> : <User size={12} />}
+                  {user.username}
+                </span>
+                <button
+                  type="button"
+                  onClick={logout}
+                  className="btn-ghost px-2! py-1.5!"
+                  style={{
+                    color: 'var(--c-text-muted)',
+                    borderColor: 'var(--c-border)',
+                  }}
+                  title="Выйти"
+                  aria-label="Выйти из аккаунта"
+                >
+                  <LogOut size={15} />
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -155,7 +178,6 @@ export default function App() {
               <Route path="/add" element={withRouteBoundary(<AddPlot />)} />
               <Route path="/my" element={withRouteBoundary(<MyPlots />)} />
               <Route path="/admin" element={withRouteBoundary(<AdminPanel />)} />
-              <Route path="/login" element={withRouteBoundary(<LoginPage />)} />
               <Route path="*" element={withRouteBoundary(<NotFoundPage />)} />
             </Routes>
           </AnimatePresence>
@@ -170,7 +192,7 @@ export default function App() {
           fontFamily: 'var(--font-mono)',
         }}
       >
-        LAND PLOTS SERVICE 2026
+        LAND PLOTS SERVICE
       </footer>
     </div>
   );

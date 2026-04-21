@@ -15,15 +15,23 @@ def serialize_doc(doc: dict) -> dict:
     return doc
 
 
+def _serialize_value(value):
+    """Рекурсивно приводит значение к JSON-сериализуемому виду."""
+    if isinstance(value, ObjectId):
+        return str(value)
+    if isinstance(value, datetime):
+        return value.isoformat()
+    if isinstance(value, dict):
+        return serialize_doc_deep(value)
+    if isinstance(value, list):
+        return [_serialize_value(item) for item in value]
+    return value
+
+
 def serialize_doc_deep(doc: dict) -> dict:
     """Рекурсивно конвертирует MongoDB-документ в JSON-сериализуемый dict."""
     for key, value in list(doc.items()):
-        if isinstance(value, ObjectId):
-            doc[key] = str(value)
-        elif isinstance(value, datetime):
-            doc[key] = value.isoformat()
-        elif isinstance(value, dict):
-            doc[key] = serialize_doc_deep(value)
+        doc[key] = _serialize_value(value)
     return doc
 
 

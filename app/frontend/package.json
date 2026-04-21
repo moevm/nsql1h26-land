@@ -17,6 +17,7 @@
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",
+    "@tabler/icons-react": "^3.26.0",
     "@tanstack/query-sync-storage-persister": "^5.97.0",
     "@tanstack/react-query": "^5.97.0",
     "@tanstack/react-query-devtools": "^5.97.0",
@@ -26,7 +27,7 @@
     "framer-motion": "^12.38.0",
     "idb-keyval": "^6.2.2",
     "leaflet": "^1.9.4",
-    "lucide-react": "^1.8.0",
+    "lucide-react": "^0.460.0",
     "react": "^19.2.5",
     "react-dom": "^19.2.5",
     "react-hook-form": "^7.72.1",

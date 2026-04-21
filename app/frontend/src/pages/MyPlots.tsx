@@ -8,11 +8,9 @@ import { PageHeader } from '../components/PageHeader';
 import ScoreGauge from '../components/ScoreGauge';
 import Pagination from '../components/Pagination';
 import { Button, Surface } from '../components/ui';
-import { useAuth } from '../contexts/AuthContext';
 import { useDeletePlotMutation, useMyPlotsQuery } from '../features/plots/hooks';
 
 export default function MyPlots() {
-  const { user } = useAuth();
   const [page, setPage] = useState(1);
   const [actionError, setActionError] = useState('');
 
@@ -29,23 +27,15 @@ export default function MyPlots() {
   const loading = myPlotsQuery.isLoading;
   const error = myPlotsQuery.error ? getErrorMessage(myPlotsQuery.error) : '';
 
+  // Синхронизируем локальную страницу с ответом сервера только после
+  // завершения запроса (иначе placeholderData сбрасывает пользователя
+  // на предыдущую страницу во время fetch).
   useEffect(() => {
-    if (!data) return;
+    if (!data || myPlotsQuery.isFetching) return;
     if (data.page !== page) {
       setPage(data.page);
     }
-  }, [data, page]);
-
-  if (!user) {
-    return (
-      <div className="text-center py-16">
-        <p style={{ color: 'var(--c-text-dim)' }}>Необходимо войти в систему</p>
-        <Link to="/login" className="text-sm mt-3 inline-block" style={{ color: 'var(--c-accent)' }}>
-          Войти
-        </Link>
-      </div>
-    );
-  }
+  }, [data, myPlotsQuery.isFetching, page]);
 
   async function handleDelete(id: string) {
     if (!confirm('Удалить объявление?')) return;

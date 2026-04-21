@@ -12,8 +12,39 @@ def _parse_csv_env(name: str, default: str) -> list[str]:
 MONGODB_URI = os.getenv("MONGODB_URI", "mongodb://mongo:27017")
 MONGODB_DB = os.getenv("MONGODB_DB", "land_plots")
 
-# --- Collections ---
+# --- Collections (см. app/docs/data_model.md) ---
 COL_PLOTS = "plots"
+COL_INFRA = "infra_objects"
+COL_USERS = "users"
+
+# Типы в infra_objects.type (по data_model.md)
+INFRA_TYPES = [
+    "metro_station",
+    "hospital",
+    "school",
+    "kindergarten",
+    "store",
+    "pickup_point",
+    "bus_stop",
+    "negative",
+]
+
+# Внешние slug-идентификаторы (в API-путях, ключах export/import, стат.).
+# Внутренне всё хранится в одной коллекции infra_objects с полем type.
+INFRA_SLUG_TO_TYPE = {
+    "metro_stations":   "metro_station",
+    "hospitals":        "hospital",
+    "schools":          "school",
+    "kindergartens":    "kindergarten",
+    "stores":           "store",
+    "pickup_points":    "pickup_point",
+    "bus_stops":        "bus_stop",
+    "negative_objects": "negative",
+}
+INFRA_TYPE_TO_SLUG = {v: k for k, v in INFRA_SLUG_TO_TYPE.items()}
+INFRA_SLUGS = list(INFRA_SLUG_TO_TYPE.keys())
+
+# Backward-совместимые алиасы на внешние slug — используются в роутах/экспорте.
 COL_METRO = "metro_stations"
 COL_HOSPITALS = "hospitals"
 COL_SCHOOLS = "schools"
@@ -100,7 +131,6 @@ JWT_SECRET = os.getenv("JWT_SECRET", "land-plots-dev-secret-key-change-in-prod")
 JWT_ALGORITHM = "HS256"
 JWT_EXPIRE_HOURS = 72
 PASSWORD_SALT = os.getenv("PASSWORD_SALT", JWT_SECRET)
-COL_USERS = "users"
 
 # --- Pagination ---
 DEFAULT_PAGE_SIZE = 20

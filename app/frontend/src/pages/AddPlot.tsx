@@ -62,10 +62,7 @@ export default function AddPlot() {
 
   return (
     <div className="max-w-3xl mx-auto animate-fade-in-up">
-      <PageHeader
-        title="Новый участок"
-        subtitle="Добавьте объявление — система автоматически рассчитает расстояния и характеристики"
-      />
+      <PageHeader title="Новый участок" />
 
       <AlertMessage message={error} />
 
@@ -93,18 +90,19 @@ export default function AddPlot() {
           </div>
 
           <div>
-            <FieldLabel htmlFor="add-description">Описание</FieldLabel>
+            <FieldLabel htmlFor="add-description">Описание *</FieldLabel>
             <Textarea
               id="add-description"
               {...register('description')}
               rows={5}
               placeholder="Опишите участок: коммуникации, особенности, окружение..."
             />
+            <FieldError message={errors.description?.message} />
           </div>
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <FieldLabel htmlFor="add-price">Цена (₽)</FieldLabel>
+              <FieldLabel htmlFor="add-price">Цена (₽) *</FieldLabel>
               <Input id="add-price" type="number" step="10000" min="0" placeholder="1 500 000" {...register('price')} />
               <FieldError message={errors.price?.message} />
               {priceValue && Number(priceValue) > 0 && (
@@ -112,7 +110,7 @@ export default function AddPlot() {
               )}
             </div>
             <div>
-              <FieldLabel htmlFor="add-area">Площадь (сотки)</FieldLabel>
+              <FieldLabel htmlFor="add-area">Площадь (сотки) *</FieldLabel>
               <Input id="add-area" type="number" step="0.5" min="0" placeholder="10" {...register('area_sotki')} />
               <FieldError message={errors.area_sotki?.message} />
               {priceValue && areaValue && Number(areaValue) > 0 && (
@@ -123,22 +121,25 @@ export default function AddPlot() {
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <FieldLabel htmlFor="add-location">Район</FieldLabel>
+              <FieldLabel htmlFor="add-location">Район *</FieldLabel>
               <Input id="add-location" {...register('location')} />
+              <FieldError message={errors.location?.message} />
             </div>
             <div>
-              <FieldLabel htmlFor="add-address">Адрес</FieldLabel>
+              <FieldLabel htmlFor="add-address">Адрес *</FieldLabel>
               <Input id="add-address" {...register('address')} />
+              <FieldError message={errors.address?.message} />
             </div>
           </div>
 
           <div>
-            <FieldLabel htmlFor="add-geo-ref">Гео-описание</FieldLabel>
+            <FieldLabel htmlFor="add-geo-ref">Гео-описание *</FieldLabel>
             <Input
               id="add-geo-ref"
               {...register('geo_ref')}
               placeholder="д. Низино, СНТ Сад-2"
             />
+            <FieldError message={errors.geo_ref?.message} />
           </div>
 
           <div className="grid grid-cols-2 gap-4">
@@ -158,11 +159,8 @@ export default function AddPlot() {
         {/* Submit */}
         <div className="pt-2">
           <Button type="submit" disabled={createMutation.isPending} className="w-full py-4 text-base">
-            {createMutation.isPending ? 'Добавление... (расчёт фич и расстояний)' : 'Добавить участок'}
+            {createMutation.isPending ? 'Добавление...' : 'Добавить участок'}
           </Button>
-          <p className="text-xs mt-3 text-center" style={{ color: 'var(--c-text-dim)' }}>
-            При добавлении автоматически рассчитываются текстовые фичи, эмбеддинги и расстояния до инфраструктуры
-          </p>
         </div>
       </form>
     </div>

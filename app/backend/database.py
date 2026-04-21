@@ -4,11 +4,10 @@ MongoDB: подключение, создание индексов, инициа
 
 import logging
 from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase
-from pymongo import GEOSPHERE
+from pymongo import ASCENDING, GEOSPHERE
 from config import (
     MONGODB_URI, MONGODB_DB,
-    COL_PLOTS, INFRA_COLLECTIONS, COL_NEGATIVE,
-    COL_USERS,
+    COL_PLOTS, COL_INFRA, COL_USERS,
 )
 
 logger = logging.getLogger(__name__)
@@ -67,10 +66,11 @@ def get_user_repo():
 
 async def ensure_indexes():
     """
-    Создаёт необходимые индексы:
-      - 2dsphere на geo_location в plots
-      - 2dsphere на location во всех инфра/негативных коллекциях
-      - уникальный индекс на avito_id в plots
+    Создаёт необходимые индексы (см. app/docs/data_model.md):
+      plots:        geo_location (2dsphere), avito_id (unique sparse),
+                    price, area_sotki, total_score
+      users:        username (unique)
+      infra_objects: location (2dsphere), составной (type, name), subtype
     """
     assert db is not None
 
@@ -92,12 +92,12 @@ async def ensure_indexes():
     await users.create_index("username", unique=True)
     logger.info(_INDEX_LOG_TEMPLATE, COL_USERS)
 
-    # infrastructure collections
-    for col_name in INFRA_COLLECTIONS + [COL_NEGATIVE]:
-        col = db[col_name]
-        await col.create_index([("location", GEOSPHERE)])
-        await col.create_index("name")
-        logger.info(_INDEX_LOG_TEMPLATE, col_name)
+    # infra_objects (единая коллекция с полем type + опц. subtype)
+    infra = db[COL_INFRA]
+    await infra.create_index([("location", GEOSPHERE)])
+    await infra.create_index([("type", ASCENDING), ("name", ASCENDING)])
+    await infra.create_index("subtype", sparse=True)
+    logger.info(_INDEX_LOG_TEMPLATE, COL_INFRA)
 
 
 async def seed_admin():

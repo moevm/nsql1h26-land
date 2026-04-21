@@ -114,13 +114,6 @@ export default function LoginPage() {
           </p>
         </Surface>
       </form>
-
-      <p
-        className="text-xs mt-4 text-center"
-        style={{ color: 'var(--c-text-dim)', fontFamily: 'var(--font-mono)' }}
-      >
-        Админ по умолчанию: admin / admin
-      </p>
     </div>
   );
 }

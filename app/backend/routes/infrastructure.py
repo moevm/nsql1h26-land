@@ -10,7 +10,7 @@ from bson import ObjectId
 from fastapi import APIRouter, Depends, HTTPException
 
 from database import get_db, get_infra_repo
-from config import INFRA_COLLECTIONS, COL_NEGATIVE
+from config import INFRA_SLUGS, COL_NEGATIVE
 from models import InfraObjectCreate, InfraObjectOut
 from auth import require_admin
 from services.geo_service import recalculate_all_scores
@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/infra", tags=["infrastructure"])
 
-ALL_COLLECTIONS = INFRA_COLLECTIONS + [COL_NEGATIVE]
+ALL_COLLECTIONS = list(INFRA_SLUGS)
 _BACKGROUND_TASKS: set[asyncio.Task[Any]] = set()
 
 
@@ -34,6 +34,9 @@ def _serialize(doc: dict) -> dict:
     coords = doc.get("location", {}).get("coordinates", [0, 0])
     doc["lon"] = coords[0] if len(coords) > 0 else 0
     doc["lat"] = coords[1] if len(coords) > 1 else 0
+    # В API-ответе поле `type` для UI — это subtype негативных объектов.
+    # Для обычной инфраструктуры оно не нужно.
+    doc["type"] = doc.get("subtype")
     return doc
 
 
@@ -91,14 +94,13 @@ async def add_object(
         "location": {"type": "Point", "coordinates": [data.lon, data.lat]},
     }
     if data.type and collection == COL_NEGATIVE:
-        doc["type"] = data.type
+        # для negative поле `type` в API соответствует subtype в БД
+        doc["subtype"] = data.type
 
     inserted_id = await repo.insert_one(collection, doc)
-    doc["_id"] = str(inserted_id)
-    doc["lat"] = data.lat
-    doc["lon"] = data.lon
+    out = _serialize({**doc, "_id": inserted_id})
     _trigger_recalc()
-    return InfraObjectOut(**doc)
+    return InfraObjectOut(**out)
 
 
 @router.delete(
@@ -153,7 +155,7 @@ async def replace_collection(
             "location": {"type": "Point", "coordinates": [item.lon, item.lat]},
         }
         if item.type and collection == COL_NEGATIVE:
-            doc["type"] = item.type
+            doc["subtype"] = item.type
         docs.append(doc)
 
     count = await repo.replace_all(collection, docs)

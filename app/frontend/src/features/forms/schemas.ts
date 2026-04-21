@@ -8,20 +8,34 @@ const optionalNonNegativeNumber = z
     'Введите число >= 0',
   );
 
-const optionalHttpUrl = z
-  .string()
-  .trim()
-  .refine(
-    (value) => value === '' || /^https?:\/\//i.test(value),
-    'Укажите URL, начинающийся с http:// или https://',
-  );
+function requiredPositiveNumber(max: number, message: string) {
+  return z
+    .string()
+    .trim()
+    .min(1, 'Обязательное поле')
+    .refine((value) => {
+      const n = Number(value);
+      return !Number.isNaN(n) && n > 0 && n <= max;
+    }, message);
+}
+
+function optionalHttpUrlWithMax(max: number) {
+  return z
+    .string()
+    .trim()
+    .max(max, `Максимум ${max} символов`)
+    .refine(
+      (value) => value === '' || /^https?:\/\//i.test(value),
+      'Укажите URL, начинающийся с http:// или https://',
+    );
+}
 
 export const authFormSchema = z.object({
   username: z
     .string()
     .trim()
     .min(3, 'Минимум 3 символа')
-    .max(64, 'Максимум 64 символа'),
+    .max(20, 'Максимум 20 символов'),
   password: z
     .string()
     .min(4, 'Минимум 4 символа')
@@ -35,15 +49,31 @@ export const plotFormSchema = z.object({
     .string()
     .trim()
     .min(3, 'Минимум 3 символа')
-    .max(180, 'Максимум 180 символов'),
-  description: z.string().trim(),
-  price: optionalNonNegativeNumber,
-  area_sotki: optionalNonNegativeNumber,
-  location: z.string().trim(),
-  address: z.string().trim(),
-  geo_ref: z.string().trim(),
-  url: optionalHttpUrl,
-  thumbnail: optionalHttpUrl,
+    .max(100, 'Максимум 100 символов'),
+  description: z
+    .string()
+    .trim()
+    .min(10, 'Минимум 10 символов')
+    .max(80_000, 'Максимум 80 000 символов'),
+  price: requiredPositiveNumber(10_000_000_000, 'Цена должна быть > 0 и ≤ 10 000 000 000'),
+  area_sotki: requiredPositiveNumber(100_000, 'Площадь должна быть > 0 и ≤ 100 000 соток'),
+  location: z
+    .string()
+    .trim()
+    .min(2, 'Минимум 2 символа')
+    .max(50, 'Максимум 50 символов'),
+  address: z
+    .string()
+    .trim()
+    .min(5, 'Минимум 5 символов')
+    .max(2_500, 'Максимум 2500 символов'),
+  geo_ref: z
+    .string()
+    .trim()
+    .min(2, 'Минимум 2 символа')
+    .max(150, 'Максимум 150 символов'),
+  url: optionalHttpUrlWithMax(200),
+  thumbnail: optionalHttpUrlWithMax(300),
 });
 
 export type PlotFormValues = z.infer<typeof plotFormSchema>;

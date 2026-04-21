@@ -8,12 +8,13 @@ from datetime import datetime, timezone
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 
 from database import get_db, get_plot_repo, get_infra_repo
 from auth import require_admin
 from config import (
-    COL_PLOTS, INFRA_COLLECTIONS, COL_NEGATIVE,
+    COL_PLOTS, INFRA_SLUGS,
 )
 from services.feature_service import extract_features_batch
 from services.geo_service import compute_distances, compute_total_score, recalculate_all_scores
@@ -25,7 +26,7 @@ router = APIRouter(prefix="/api/data", tags=["data-io"])
 
 logger = logging.getLogger(__name__)
 
-ALL_COLLECTIONS = [COL_PLOTS] + INFRA_COLLECTIONS + [COL_NEGATIVE]
+ALL_COLLECTIONS = [COL_PLOTS] + list(INFRA_SLUGS)
 _BACKGROUND_TASKS: set[asyncio.Task[Any]] = set()
 
 
@@ -179,10 +180,10 @@ async def export_all():
     docs = await plot_repo.find_all()
     result[COL_PLOTS] = [_serialize_doc(d) for d in docs]
     # infra collections
-    for col_name in INFRA_COLLECTIONS + [COL_NEGATIVE]:
+    for col_name in INFRA_SLUGS:
         docs = await infra_repo.find_all(col_name)
         result[col_name] = [_serialize_doc(d) for d in docs]
-    return JSONResponse(content=result)
+    return JSONResponse(content=jsonable_encoder(result))
 
 
 @router.get(
@@ -199,11 +200,11 @@ async def export_collection(collection: str):
     else:
         repo = get_infra_repo()
         docs = await repo.find_all(collection)
-    return JSONResponse(content={
+    return JSONResponse(content=jsonable_encoder({
         "collection": collection,
         "count": len(docs),
         "data": [_serialize_doc(d) for d in docs],
-    })
+    }))
 
 
 # ---------- Импорт ----------
@@ -281,6 +282,6 @@ async def get_stats():
     infra_repo = get_infra_repo()
     stats = {}
     stats[COL_PLOTS] = await plot_repo.count()
-    for col_name in INFRA_COLLECTIONS + [COL_NEGATIVE]:
+    for col_name in INFRA_SLUGS:
         stats[col_name] = await infra_repo.count(col_name)
     return stats

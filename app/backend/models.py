@@ -10,36 +10,36 @@ from datetime import datetime
 # ---------- Plots ----------
 
 class PlotCreate(BaseModel):
-    """Данные для создания объявления."""
-    title: str = Field(..., min_length=3, max_length=180)
-    description: str = ""
-    price: float = Field(default=0, ge=0)
-    area_sotki: Optional[float] = Field(default=None, ge=0)
-    location: str = ""
-    address: str = ""
-    geo_ref: str = ""
+    """Данные для создания объявления (лимиты — см. app/docs/data_model.md)."""
+    title: str = Field(..., min_length=3, max_length=100)
+    description: str = Field(..., min_length=10, max_length=80_000)
+    price: float = Field(..., gt=0, le=10_000_000_000)
+    area_sotki: float = Field(..., gt=0, le=100_000)
+    location: str = Field(..., min_length=2, max_length=50)
+    address: str = Field(..., min_length=5, max_length=2_500)
+    geo_ref: str = Field(..., min_length=2, max_length=150)
     lat: float = Field(..., ge=-90, le=90)
     lon: float = Field(..., ge=-180, le=180)
-    url: str = ""
-    thumbnail: str = ""
-    images_count: int = Field(default=0, ge=0)
+    url: str = Field(default="", max_length=200)
+    thumbnail: str = Field(default="", max_length=300)
+    images_count: int = Field(default=0, ge=0, le=100)
     was_lowered: bool = False
 
 
 class PlotUpdate(BaseModel):
     """Данные для обновления объявления (все поля опциональны)."""
-    title: Optional[str] = Field(default=None, min_length=3, max_length=180)
-    description: Optional[str] = None
-    price: Optional[float] = Field(default=None, ge=0)
-    area_sotki: Optional[float] = Field(default=None, ge=0)
-    location: Optional[str] = None
-    address: Optional[str] = None
-    geo_ref: Optional[str] = None
+    title: Optional[str] = Field(default=None, min_length=3, max_length=100)
+    description: Optional[str] = Field(default=None, max_length=80_000)
+    price: Optional[float] = Field(default=None, ge=0, le=10_000_000_000)
+    area_sotki: Optional[float] = Field(default=None, gt=0, le=100_000)
+    location: Optional[str] = Field(default=None, max_length=50)
+    address: Optional[str] = Field(default=None, max_length=2_500)
+    geo_ref: Optional[str] = Field(default=None, max_length=150)
     lat: Optional[float] = Field(default=None, ge=-90, le=90)
     lon: Optional[float] = Field(default=None, ge=-180, le=180)
-    url: Optional[str] = None
-    thumbnail: Optional[str] = None
-    images_count: Optional[int] = Field(default=None, ge=0)
+    url: Optional[str] = Field(default=None, max_length=200)
+    thumbnail: Optional[str] = Field(default=None, max_length=300)
+    images_count: Optional[int] = Field(default=None, ge=0, le=100)
     was_lowered: Optional[bool] = None
 
 
@@ -131,10 +131,11 @@ class SellerProfileOut(BaseModel):
 # ---------- Infrastructure ----------
 
 class InfraObjectCreate(BaseModel):
-    name: str
-    lat: float
-    lon: float
-    type: Optional[str] = None  # только для negative_objects
+    name: str = Field(..., min_length=1, max_length=80)
+    lat: float = Field(..., ge=-90, le=90)
+    lon: float = Field(..., ge=-180, le=180)
+    # Для negative_objects — subtype (landfill/industrial/...), max 20
+    type: Optional[str] = Field(default=None, max_length=20)
 
 
 class InfraObjectOut(BaseModel):

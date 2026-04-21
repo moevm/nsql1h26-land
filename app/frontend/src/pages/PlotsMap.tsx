@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { LocateFixed, Radar, Search, X } from 'lucide-react';
+import { LocateFixed, Radar } from 'lucide-react';
 import { MapContainer, TileLayer, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
@@ -9,7 +9,7 @@ import 'leaflet.markercluster';
 
 import { type MapPlot } from '../api';
 import { PageHeader } from '../components/PageHeader';
-import { Button, Input } from '../components/ui';
+import { Button } from '../components/ui';
 import { useMapPlotsQuery } from '../features/plots/hooks';
 import { cn } from '../lib/cn';
 import { MOTION_DURATION_S, MOTION_TRANSITION } from '../lib/motion';
@@ -227,34 +227,18 @@ export default function PlotsMap() {
   const { data, error: queryError, isPending, progress } = mapQuery;
 
   const [scoreMode, setScoreMode] = useState<ScoreMode>('all');
-  const [searchInput, setSearchInput] = useState('');
-  const [searchQuery, setSearchQuery] = useState('');
 
   const plots = useMemo(() => data?.items ?? [], [data?.items]);
-  const searchTerm = searchQuery.trim().toLowerCase();
 
   const filteredPlots = useMemo(() => {
     if (plots.length === 0) {
       return [];
     }
-
-    if (scoreMode === 'all' && searchTerm.length === 0) {
+    if (scoreMode === 'all') {
       return plots;
     }
-
-    return plots.filter((plot) => {
-      if (!matchesScoreMode(plot, scoreMode)) {
-        return false;
-      }
-      if (searchTerm.length === 0) {
-        return true;
-      }
-
-      const title = plot.title.toLowerCase();
-      const location = plot.location.toLowerCase();
-      return title.includes(searchTerm) || location.includes(searchTerm);
-    });
-  }, [plots, scoreMode, searchTerm]);
+    return plots.filter((plot) => matchesScoreMode(plot, scoreMode));
+  }, [plots, scoreMode]);
 
   const stats = useMemo(() => {
     if (filteredPlots.length === 0) {
@@ -273,7 +257,7 @@ export default function PlotsMap() {
   const totalPlots = progress.total || data?.total || 0;
   const isInitialLoading = isPending && plots.length === 0;
   const error = queryError ? getErrorMessage(queryError) : '';
-  const hasActiveFilters = scoreMode !== 'all' || searchQuery.trim().length > 0;
+  const hasActiveFilters = scoreMode !== 'all';
   const progressRatio = totalPages > 0 ? Math.min(1, loadedPages / totalPages) : 0;
 
   useEffect(() => {
@@ -307,15 +291,8 @@ export default function PlotsMap() {
     mapRef.current.flyTo(SPB_CENTER, 10, { duration: MOTION_DURATION_S });
   }, []);
 
-  const handleSearchSubmit = useCallback((event: React.SyntheticEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    setSearchQuery(searchInput.trim());
-  }, [searchInput]);
-
   const resetFilters = useCallback(() => {
     setScoreMode('all');
-    setSearchInput('');
-    setSearchQuery('');
   }, []);
 
   return (
@@ -323,10 +300,8 @@ export default function PlotsMap() {
       <div className="flex items-end justify-between mb-4 gap-4 flex-wrap">
         <PageHeader
           title="Карта участков"
-          subtitle="Плавная навигация, быстрые фильтры и точечный фокус по нужным предложениям"
           className="min-w-0"
           titleClassName="mb-1"
-          subtitleClassName="mb-0"
         />
 
         {stats && (
@@ -373,32 +348,6 @@ export default function PlotsMap() {
         transition={{ ...MOTION_TRANSITION, delay: MOTION_DURATION_S / 8 }}
       >
         <div className="flex flex-wrap items-center gap-3">
-          <form onSubmit={handleSearchSubmit} className="min-w-[220px] flex-1 max-w-[560px] flex items-center gap-2">
-            <div className="relative flex-1">
-              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: 'var(--c-text-dim)' }} />
-              <Input
-                value={searchInput}
-                onChange={(event) => setSearchInput(event.target.value)}
-                placeholder="Поиск по названию и локации"
-                className="pl-9 pr-9"
-              />
-              {searchInput && (
-                <button
-                  type="button"
-                  className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-1"
-                  style={{ color: 'var(--c-text-dim)' }}
-                  onClick={() => setSearchInput('')}
-                  aria-label="Очистить поиск"
-                >
-                  <X size={14} />
-                </button>
-              )}
-            </div>
-            <Button type="submit" variant="ghost" size="sm" className="map-tool-button shrink-0">
-              Найти
-            </Button>
-          </form>
-
           <div className="flex flex-wrap items-center gap-2">
             {SCORE_MODES.map((mode) => {
               const active = scoreMode === mode.id;

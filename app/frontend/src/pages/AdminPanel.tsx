@@ -7,15 +7,24 @@ import { AlertMessage } from '../components/AlertMessage';
 import { PageHeader } from '../components/PageHeader';
 import { SectionTitle } from '../components/SectionTitle';
 import { Button, Surface } from '../components/ui';
+import { cn } from '../lib/cn';
+import {
+  extractPlotsArray,
+  formatZodError,
+  infraImportPayloadSchema,
+  plotsImportPayloadSchema,
+} from '../features/forms/importSchemas';
 
 export default function AdminPanel() {
-  const { user, isAdmin } = useAuth();
+  const { isAdmin } = useAuth();
   const [stats, setStats] = useState<Record<string, number> | null>(null);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const fileInput = useRef<HTMLInputElement>(null);
   const infraFileInput = useRef<HTMLInputElement>(null);
+  const [plotsFileName, setPlotsFileName] = useState('');
+  const [infraFileName, setInfraFileName] = useState('');
 
   async function loadStats() {
     try {
@@ -29,6 +38,14 @@ export default function AdminPanel() {
   useEffect(() => {
     loadStats();
   }, []);
+
+  // Live-обновление счётчиков во время импорта/очистки: пока loading=true,
+  // опрашиваем /api/data/stats каждые 1000 мс.
+  useEffect(() => {
+    if (!loading) return;
+    const timer = setInterval(loadStats, 1000);
+    return () => clearInterval(timer);
+  }, [loading]);
 
   // Auto-clear success message after 5s (with proper cleanup)
   useEffect(() => {
@@ -85,25 +102,20 @@ export default function AdminPanel() {
     setLoading(true);
     try {
       const text = await file.text();
-      const json = JSON.parse(text);
-
-      let records: unknown[];
-      if (Array.isArray(json)) {
-        records = json;
-      } else if (json.plots && Array.isArray(json.plots)) {
-        records = json.plots;
-      } else if (json.data && Array.isArray(json.data)) {
-        records = json.data;
-      } else {
-        const plotsKey = Object.keys(json).find((k) => k === 'plots');
-        if (plotsKey) {
-          records = json[plotsKey];
-        } else {
-          throw new Error('Неверный формат файла');
-        }
+      let json: unknown;
+      try {
+        json = JSON.parse(text);
+      } catch {
+        throw new Error('Файл не является валидным JSON');
       }
 
-      const result = await importPlots(toRecordArray(records));
+      const rawRecords = extractPlotsArray(json);
+      const parsed = plotsImportPayloadSchema.safeParse(rawRecords);
+      if (!parsed.success) {
+        throw new Error(formatZodError(parsed.error));
+      }
+
+      const result = await importPlots(toRecordArray(parsed.data as unknown[]));
       showMsg(`Импортировано: ${result.inserted} объявлений`);
       loadStats();
     } catch (e) {
@@ -111,6 +123,7 @@ export default function AdminPanel() {
     } finally {
       setLoading(false);
       if (fileInput.current) fileInput.current.value = '';
+      setPlotsFileName('');
     }
   }
 
@@ -123,12 +136,22 @@ export default function AdminPanel() {
     setLoading(true);
     try {
       const text = await file.text();
-      const json = JSON.parse(text);
+      let json: unknown;
+      try {
+        json = JSON.parse(text);
+      } catch {
+        throw new Error('Файл не является валидным JSON');
+      }
+      const parsed = infraImportPayloadSchema.safeParse(json);
+      if (!parsed.success) {
+        throw new Error(formatZodError(parsed.error));
+      }
+
       let totalReplaced = 0;
-      const collections = Object.keys(json);
+      const collections = Object.keys(parsed.data);
       for (const col of collections) {
-        if (!Array.isArray(json[col])) continue;
-        const result = await importInfra(col, toRecordArray(json[col]));
+        const items = parsed.data[col];
+        const result = await importInfra(col, toRecordArray(items));
         totalReplaced += result.replaced;
       }
       showMsg(`Импорт инфраструктуры: заменено ${totalReplaced} объектов (${collections.length} коллекций)`);
@@ -138,6 +161,7 @@ export default function AdminPanel() {
     } finally {
       setLoading(false);
       if (infraFileInput.current) infraFileInput.current.value = '';
+      setInfraFileName('');
     }
   }
 
@@ -165,14 +189,6 @@ export default function AdminPanel() {
   };
 
   const totalDocs = stats ? Object.values(stats).reduce((a, b) => a + b, 0) : 0;
-
-  if (!user) {
-    return (
-      <div className="text-center py-16">
-        <p style={{ color: 'var(--c-text-dim)' }}>Необходимо войти в систему</p>
-      </div>
-    );
-  }
 
   if (!isAdmin) {
     return (
@@ -210,16 +226,23 @@ export default function AdminPanel() {
             Импорт объявлений
           </p>
           <div className="flex gap-3 items-center">
-            <input
-              ref={fileInput}
-              type="file"
-              accept=".json"
-              className="flex-1 text-sm"
-              style={{
-                color: 'var(--c-text-muted)',
-                fontFamily: 'var(--font-body)',
-              }}
-            />
+            <label
+              className={cn('file-input flex-1', plotsFileName && 'file-input--selected')}
+            >
+              <input
+                ref={fileInput}
+                type="file"
+                accept=".json"
+                onChange={(e) => setPlotsFileName(e.target.files?.[0]?.name ?? '')}
+              />
+              <span className="file-input-btn">
+                <Upload size={13} />
+                Выберите файл
+              </span>
+              <span className="file-input-name">
+                {plotsFileName || 'Файл не выбран'}
+              </span>
+            </label>
             <Button
               onClick={handleImport}
               disabled={loading}
@@ -245,16 +268,23 @@ export default function AdminPanel() {
             Импорт инфраструктуры
           </p>
           <div className="flex gap-3 items-center">
-            <input
-              ref={infraFileInput}
-              type="file"
-              accept=".json"
-              className="flex-1 text-sm"
-              style={{
-                color: 'var(--c-text-muted)',
-                fontFamily: 'var(--font-body)',
-              }}
-            />
+            <label
+              className={cn('file-input flex-1', infraFileName && 'file-input--selected')}
+            >
+              <input
+                ref={infraFileInput}
+                type="file"
+                accept=".json"
+                onChange={(e) => setInfraFileName(e.target.files?.[0]?.name ?? '')}
+              />
+              <span className="file-input-btn">
+                <Upload size={13} />
+                Выберите файл
+              </span>
+              <span className="file-input-name">
+                {infraFileName || 'Файл не выбран'}
+              </span>
+            </label>
             <Button
               onClick={handleImportInfra}
               disabled={loading}

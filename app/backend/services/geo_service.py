@@ -5,15 +5,11 @@
 Работает через InfraRepository.
 """
 
-import asyncio
 import logging
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from repositories.infra_repository import InfraRepository
 from config import (
     COL_PLOTS,
-    COL_METRO, COL_HOSPITALS, COL_SCHOOLS,
-    COL_KINDERGARTENS, COL_STORES, COL_PICKUP_POINTS,
-    COL_BUS_STOPS, COL_NEGATIVE,
     INFRA_MAX_DISTANCE_KM,
     NEGATIVE_MIN_DISTANCE_KM, NEGATIVE_MAX_DISTANCE_KM,
     WEIGHTS,
@@ -21,15 +17,16 @@ from config import (
 
 logger = logging.getLogger(__name__)
 
-# Коллекция → ключ в distances
-_INFRA_MAP = {
-    COL_METRO:         "nearest_metro",
-    COL_HOSPITALS:     "nearest_hospital",
-    COL_SCHOOLS:       "nearest_school",
-    COL_KINDERGARTENS: "nearest_kindergarten",
-    COL_STORES:        "nearest_store",
-    COL_PICKUP_POINTS: "nearest_pickup_point",
-    COL_BUS_STOPS:     "nearest_bus_stop",
+# BSON type → ключ в distances (по data_model.md)
+_TYPE_TO_DIST_KEY = {
+    "metro_station":  "nearest_metro",
+    "hospital":       "nearest_hospital",
+    "school":         "nearest_school",
+    "kindergarten":   "nearest_kindergarten",
+    "store":          "nearest_store",
+    "pickup_point":   "nearest_pickup_point",
+    "bus_stop":       "nearest_bus_stop",
+    "negative":       "nearest_negative",
 }
 
 # Веса для расчёта infra_score
@@ -44,46 +41,26 @@ _INFRA_WEIGHTS = {
 }
 
 
-async def _nearest(repo: InfraRepository, collection: str, lon: float, lat: float) -> dict:
-    """Находит ближайший объект в коллекции через репозиторий."""
-    doc = await repo.find_nearest(collection, lon, lat)
-    if doc:
-        return {
-            "name": doc.get("name", ""),
-            "km": round(doc["dist_meters"] / 1000.0, 2),
-        }
-    return {"name": "", "km": INFRA_MAX_DISTANCE_KM}
-
-
 async def compute_distances(db: AsyncIOMotorDatabase, lat: float, lon: float) -> dict:
     """
-    Рассчитывает расстояния до ближайших объектов всех типов.
+    Один $geoNear к infra_objects + $group by type — получает ближайший
+    объект каждого type. Возвращает distances + скоры.
 
-    Возвращает:
-        {
-            "distances": {
-                "nearest_metro": {"name": "...", "km": 5.2},
-                ...
-            },
-            "infra_score": 0.42,
-            "negative_score": 0.71,
-        }
+    (Q3/Q5 из data_model.md.)
     """
     repo = InfraRepository(db)
-    distances = {}
+    nearest_by_type = await repo.find_nearest_per_type(lon, lat)
 
-    # Параллельный запрос ко всем инфра-коллекциям + негативным объектам
-    tasks = []
-    keys = []
-    for col_name, dist_key in _INFRA_MAP.items():
-        tasks.append(_nearest(repo, col_name, lon, lat))
-        keys.append(dist_key)
-    tasks.append(_nearest(repo, COL_NEGATIVE, lon, lat))
-    keys.append("nearest_negative")
-
-    results = await asyncio.gather(*tasks)
-    for key, result in zip(keys, results):
-        distances[key] = result
+    distances: dict[str, dict] = {}
+    for bson_type, dist_key in _TYPE_TO_DIST_KEY.items():
+        doc = nearest_by_type.get(bson_type)
+        if doc:
+            distances[dist_key] = {
+                "name": doc.get("name", ""),
+                "km": round(doc["dist_meters"] / 1000.0, 2),
+            }
+        else:
+            distances[dist_key] = {"name": "", "km": INFRA_MAX_DISTANCE_KM}
 
     # infra_score
     infra_score = 0.0

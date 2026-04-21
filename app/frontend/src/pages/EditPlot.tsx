@@ -92,7 +92,6 @@ export default function EditPlot() {
   }
 
   if (loading) return <p className="text-center py-16" style={{ color: 'var(--c-text-dim)' }}>Загрузка...</p>;
-  if (!user) return <p className="text-center py-16" style={{ color: 'var(--c-red)' }}>Необходимо войти в систему</p>;
   if (error && !plot) return <p className="text-center py-16" style={{ color: 'var(--c-red)' }}>{error}</p>;
 
   return (
@@ -123,12 +122,13 @@ export default function EditPlot() {
             <FieldError message={errors.title?.message} />
           </div>
           <div>
-            <FieldLabel htmlFor="edit-description">Описание</FieldLabel>
+            <FieldLabel htmlFor="edit-description">Описание *</FieldLabel>
             <Textarea id="edit-description" {...register('description')} rows={5} placeholder="Опишите участок: коммуникации, особенности, окружение..." />
+            <FieldError message={errors.description?.message} />
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <FieldLabel htmlFor="edit-price">Цена (₽)</FieldLabel>
+              <FieldLabel htmlFor="edit-price">Цена (₽) *</FieldLabel>
               <Input id="edit-price" type="number" step="10000" min="0" placeholder="1 500 000" {...register('price')} />
               <FieldError message={errors.price?.message} />
               {priceValue && Number(priceValue) > 0 && (
@@ -136,7 +136,7 @@ export default function EditPlot() {
               )}
             </div>
             <div>
-              <FieldLabel htmlFor="edit-area">Площадь (сотки)</FieldLabel>
+              <FieldLabel htmlFor="edit-area">Площадь (сотки) *</FieldLabel>
               <Input id="edit-area" type="number" step="0.5" min="0" placeholder="10" {...register('area_sotki')} />
               <FieldError message={errors.area_sotki?.message} />
               {priceValue && areaValue && Number(areaValue) > 0 && (
@@ -146,17 +146,20 @@ export default function EditPlot() {
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <FieldLabel htmlFor="edit-location">Район</FieldLabel>
+              <FieldLabel htmlFor="edit-location">Район *</FieldLabel>
               <Input id="edit-location" {...register('location')} />
+              <FieldError message={errors.location?.message} />
             </div>
             <div>
-              <FieldLabel htmlFor="edit-address">Адрес</FieldLabel>
+              <FieldLabel htmlFor="edit-address">Адрес *</FieldLabel>
               <Input id="edit-address" {...register('address')} />
+              <FieldError message={errors.address?.message} />
             </div>
           </div>
           <div>
-            <FieldLabel htmlFor="edit-geo-ref">Гео-описание</FieldLabel>
+            <FieldLabel htmlFor="edit-geo-ref">Гео-описание *</FieldLabel>
             <Input id="edit-geo-ref" {...register('geo_ref')} />
+            <FieldError message={errors.geo_ref?.message} />
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div>
