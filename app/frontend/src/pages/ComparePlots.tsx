@@ -94,7 +94,7 @@ export default function ComparePlots() {
                         style={{ color: 'var(--c-text-dim)' }}
                         aria-label="Убрать из сравнения"
                       >
-                        <X size={16} />
+                        <X size={22} />
                       </Button>
                     </div>
                   </th>

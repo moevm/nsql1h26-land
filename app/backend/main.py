@@ -10,6 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from config import CORS_ORIGINS
 from database import connect, disconnect, ensure_indexes, seed_admin
+from seed_data import seed_initial_data
 from routes.plots import router as plots_router
 from routes.infrastructure import router as infra_router
 from routes.data_io import router as data_io_router
@@ -27,6 +28,7 @@ async def lifespan(app: FastAPI):
     await connect()
     await ensure_indexes()
     await seed_admin()
+    await seed_initial_data()
     logger.info("Ready.")
     yield
     logger.info("Shutting down...")

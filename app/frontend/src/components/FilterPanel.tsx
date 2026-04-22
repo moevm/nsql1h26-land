@@ -133,7 +133,7 @@ export default function FilterPanel({ visible, filters, initialForm, onApply, on
                 style={{ color: 'var(--c-text-dim)' }}
                 aria-label="Закрыть фильтры"
               >
-                <X size={16} />
+                <X size={22} />
               </Button>
             </div>
 
@@ -239,7 +239,7 @@ export default function FilterPanel({ visible, filters, initialForm, onApply, on
             className="text-xs px-2 py-1 rounded-lg"
             style={{ color: 'var(--c-red)', background: 'var(--c-red-dim)' }}
           >
-            <X size={12} /> Сбросить
+            <X size={18} /> Сбросить
           </Button>
         </div>
       )}

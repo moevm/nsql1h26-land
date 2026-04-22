@@ -121,7 +121,7 @@ export default function MyPlots() {
                     onMouseLeave={(e) => e.currentTarget.style.color = 'var(--c-text-dim)'}
                     title="Удалить"
                   >
-                    <Trash2 size={15} />
+                    <Trash2 size={20} />
                   </Button>
                 </div>
               </Surface>

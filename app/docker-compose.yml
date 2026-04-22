@@ -1,45 +1,54 @@
 services:
   mongo:
-    image: mongo:7
-    container_name: land-plots-mongo
-    ports:
-      - "27017:27017"
+    image: ${MONGO_IMAGE:-mongo:7}
+    container_name: ${MONGO_CONTAINER_NAME:-land-plots-mongo}
     volumes:
       - mongo_data:/data/db
     restart: unless-stopped
 
   mongo-express:
-    image: mongo-express:1.0
-    container_name: land-plots-mongo-express
+    image: ${MONGO_EXPRESS_IMAGE:-mongo-express:1.0}
+    container_name: ${MONGO_EXPRESS_CONTAINER_NAME:-land-plots-mongo-express}
     ports:
-      - "8081:8081"
+      - "127.0.0.1:${MONGO_EXPRESS_PORT:-8081}:8081"
     environment:
-      - ME_CONFIG_MONGODB_URL=mongodb://mongo:27017
-      - ME_CONFIG_BASICAUTH=false
+      - ME_CONFIG_MONGODB_URL=${MONGO_EXPRESS_MONGODB_URL:-mongodb://mongo:27017}
+      - ME_CONFIG_BASICAUTH=${MONGO_EXPRESS_BASICAUTH:-false}
     depends_on:
       - mongo
     restart: unless-stopped
 
   backend:
     build: ./backend
-    container_name: land-plots-backend
+    container_name: ${BACKEND_CONTAINER_NAME:-land-plots-backend}
     ports:
-      - "8000:8000"
+      - "127.0.0.1:${BACKEND_PORT:-8000}:8000"
     environment:
-      - MONGODB_URI=mongodb://mongo:27017
-      - MONGODB_DB=land_plots
+      - MONGODB_URI=${MONGODB_URI:-mongodb://mongo:27017}
+      - MONGODB_DB=${MONGODB_DB:-land_plots}
       - JINA_API_KEY=${JINA_API_KEY:-}
+      - JWT_SECRET=${JWT_SECRET:-land-plots-dev-secret-key-change-in-prod}
+      - PASSWORD_SALT=${PASSWORD_SALT:-}
+      - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:3000,http://localhost:5173}
+      - SEED_ADMIN_USERNAME=${SEED_ADMIN_USERNAME:-admin}
+      - SEED_ADMIN_PASSWORD=${SEED_ADMIN_PASSWORD:-admin}
+      - SEED_USER_USERNAME=${SEED_USER_USERNAME:-user}
+      - SEED_USER_PASSWORD=${SEED_USER_PASSWORD:-user}
+      - SEED_DATA_DIR=${SEED_DATA_DIR:-/seed-data}
+      - SEED_INFRA_FILE=${SEED_INFRA_FILE:-infrastructure.json}
+      - SEED_PLOTS_FILE=${SEED_PLOTS_FILE:-enriched_cache.json}
     depends_on:
       - mongo
     volumes:
       - model_cache:/home/appuser/.cache
+      - ./data:/seed-data:ro
     restart: unless-stopped
 
   frontend:
     build: ./frontend
-    container_name: land-plots-frontend
+    container_name: ${FRONTEND_CONTAINER_NAME:-land-plots-frontend}
     ports:
-      - "3000:8080"
+      - "127.0.0.1:${FRONTEND_PORT:-3000}:8080"
     depends_on:
       - backend
     restart: unless-stopped

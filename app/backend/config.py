@@ -141,3 +141,15 @@ CORS_ORIGINS = _parse_csv_env(
     "CORS_ORIGINS",
     "http://localhost:3000,http://localhost:5173",
 )
+
+# --- Seeding ---
+SEED_ADMIN_USERNAME = os.getenv("SEED_ADMIN_USERNAME", "admin")
+SEED_ADMIN_PASSWORD = os.getenv("SEED_ADMIN_PASSWORD", "admin")
+SEED_USER_USERNAME = os.getenv("SEED_USER_USERNAME", "user")
+SEED_USER_PASSWORD = os.getenv("SEED_USER_PASSWORD", "user")
+SEED_DATA_DIR = os.getenv(
+    "SEED_DATA_DIR",
+    os.path.join(os.path.dirname(__file__), "..", "data"),
+)
+SEED_INFRA_FILE = os.getenv("SEED_INFRA_FILE", "infrastructure.json")
+SEED_PLOTS_FILE = os.getenv("SEED_PLOTS_FILE", "enriched_cache.json")

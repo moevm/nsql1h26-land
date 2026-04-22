@@ -102,22 +102,32 @@ async def ensure_indexes():
 
 async def seed_admin():
     """
-    Создаёт администратора по умолчанию если нет ни одного пользователя.
-    Login: admin / admin
+    Создаёт учётки по умолчанию, если их ещё нет в БД.
+    По умолчанию: admin/admin (role=admin) и user/user (role=user).
+    Имена/пароли можно переопределить через env-переменные
+    SEED_ADMIN_USERNAME/PASSWORD и SEED_USER_USERNAME/PASSWORD.
     """
     from auth import hash_password
     from datetime import datetime, timezone
+    from config import (
+        SEED_ADMIN_USERNAME, SEED_ADMIN_PASSWORD,
+        SEED_USER_USERNAME, SEED_USER_PASSWORD,
+    )
 
     repo = get_user_repo()
-    count = await repo.count()
-    if count == 0:
-        pw_hash = hash_password("admin")
+    defaults = [
+        (SEED_ADMIN_USERNAME, SEED_ADMIN_PASSWORD, "admin"),
+        (SEED_USER_USERNAME, SEED_USER_PASSWORD, "user"),
+    ]
+    for username, password, role in defaults:
+        existing = await repo.find_by_username(username)
+        if existing:
+            logger.info("User '%s' already exists, skipping seed", username)
+            continue
         await repo.insert_one({
-            "username": "admin",
-            "password_hash": pw_hash,
-            "role": "admin",
+            "username": username,
+            "password_hash": hash_password(password),
+            "role": role,
             "created_at": datetime.now(timezone.utc),
         })
-        logger.info("Seeded default admin user (admin/admin)")
-    else:
-        logger.info("Users collection has %d docs, skipping admin seed", count)
+        logger.info("Seeded default %s user (%s)", role, username)
