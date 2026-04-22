@@ -133,8 +133,6 @@ export default function PlotDetail() {
   const sellerProfileQuery = useSellerProfileQuery(plot?.owner_name);
   const sellerProfileError = sellerProfileQuery.error ? getErrorMessage(sellerProfileQuery.error) : '';
 
-  // В качестве X используем числовой timestamp, иначе две точки в один
-  // день получают одинаковый ключ и тултип показывает только одну из них.
   const priceHistoryData = (priceHistoryQuery.data ?? [])
     .map((point) => ({
       ts: new Date(point.at).getTime(),
@@ -181,7 +179,6 @@ export default function PlotDetail() {
 
   return (
     <div className="animate-fade-in-up max-w-5xl mx-auto">
-      {/* Back + edit + delete */}
       <div className="flex items-center justify-between mb-6">
         <Button
           onClick={() => navigate(-1)}
@@ -253,7 +250,6 @@ export default function PlotDetail() {
 
       <AlertMessage message={actionError} />
 
-      {/* Title section */}
       <div className="mb-8">
         <h1
           className="text-2xl sm:text-3xl font-bold mb-2"
@@ -272,16 +268,13 @@ export default function PlotDetail() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
-        {/* Left: info (3 cols) */}
         <div className="lg:col-span-3 space-y-5">
-          {/* Image */}
           {plot.thumbnail && (
             <Surface className="overflow-hidden">
               <img src={plot.thumbnail} alt={plot.title} className="w-full max-h-80 object-cover" />
             </Surface>
           )}
 
-          {/* Price & area */}
           <Surface className="p-5">
             <div className="flex items-baseline gap-4 flex-wrap">
               <span
@@ -310,7 +303,6 @@ export default function PlotDetail() {
             </div>
           </Surface>
 
-          {/* Price history */}
           <Surface className="p-5">
             <SectionTitle className="mb-3">История цены</SectionTitle>
             {priceHistoryQuery.isLoading && (
@@ -335,13 +327,27 @@ export default function PlotDetail() {
                     />
                     <YAxis stroke="var(--c-text-dim)" fontSize={11} domain={['auto', 'auto']} />
                     <Tooltip
-                      formatter={(value) => (typeof value === 'number' ? [formatPriceFull(value), 'Цена'] : [String(value ?? ''), 'Цена'])}
-                      labelFormatter={(value) => (typeof value === 'number' ? formatHistoryLabel(value) : '')}
-                      labelStyle={{ color: 'var(--c-text-dim)' }}
-                      contentStyle={{
-                        background: 'var(--c-surface)',
-                        border: '1px solid var(--c-border)',
-                        color: 'var(--c-text)',
+                      cursor={{ stroke: 'var(--c-border)' }}
+                      content={({ active, payload }) => {
+                        if (!active || !payload || payload.length === 0) return null;
+                        const point = payload[0].payload as { ts: number; price: number };
+                        return (
+                          <div
+                            style={{
+                              background: 'var(--c-surface)',
+                              border: '1px solid var(--c-border)',
+                              color: 'var(--c-text)',
+                              padding: '6px 10px',
+                              borderRadius: 6,
+                              fontSize: 12,
+                            }}
+                          >
+                            <div style={{ color: 'var(--c-text-dim)', marginBottom: 2 }}>
+                              {formatHistoryLabel(point.ts)}
+                            </div>
+                            <div>Цена: {formatPriceFull(point.price)}</div>
+                          </div>
+                        );
                       }}
                     />
                     <Line type="monotone" dataKey="price" stroke="var(--c-accent)" strokeWidth={2} dot={{ r: 3 }} activeDot={{ r: 5 }} />
@@ -351,7 +357,6 @@ export default function PlotDetail() {
             )}
           </Surface>
 
-          {/* Location analytics */}
           <Surface className="p-5">
             <SectionTitle className="mb-3">Районная аналитика</SectionTitle>
             {locationStatsQuery.isLoading && (
@@ -375,7 +380,6 @@ export default function PlotDetail() {
             )}
           </Surface>
 
-          {/* Description */}
           <Surface className="p-5">
             <SectionTitle className="mb-3">Описание</SectionTitle>
             <p className="whitespace-pre-line leading-relaxed text-sm" style={{ color: 'var(--c-text)' }}>
@@ -383,7 +387,6 @@ export default function PlotDetail() {
             </p>
           </Surface>
 
-          {/* Features */}
           {plot.features_text && (
             <Surface className="p-5">
               <SectionTitle className="mb-3">Характеристики</SectionTitle>
@@ -405,7 +408,6 @@ export default function PlotDetail() {
             </Surface>
           )}
 
-          {/* URL */}
           {plot.url && (
             <a
               href={plot.url}
@@ -421,9 +423,7 @@ export default function PlotDetail() {
           )}
         </div>
 
-        {/* Right: analytics (2 cols) */}
         <div className="lg:col-span-2 space-y-5">
-          {/* Score gauges */}
           <Surface className="p-5">
             <SectionTitle className="mb-5">Аналитика</SectionTitle>
             <div className="grid grid-cols-2 gap-4 justify-items-center">
@@ -434,7 +434,6 @@ export default function PlotDetail() {
             </div>
           </Surface>
 
-          {/* Distances */}
           {plot.distances && (
             <Surface className="p-5">
               <SectionTitle className="mb-3">Расстояния</SectionTitle>
@@ -455,7 +454,6 @@ export default function PlotDetail() {
             </Surface>
           )}
 
-          {/* Seller */}
           <Surface className="p-5">
             <SectionTitle className="mb-3">Продавец</SectionTitle>
             {sellerProfileQuery.isLoading && (
@@ -488,7 +486,6 @@ export default function PlotDetail() {
             )}
           </Surface>
 
-          {/* Metadata */}
           <Surface
             className="p-5 text-xs"
             style={{

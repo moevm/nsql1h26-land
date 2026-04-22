@@ -1,7 +1,3 @@
-"""
-Аутентификация и авторизация: JWT + PBKDF2-SHA256.
-"""
-
 import hashlib
 from datetime import datetime, timedelta, timezone
 
@@ -12,11 +8,7 @@ from fastapi import Depends, HTTPException, Request
 from config import JWT_SECRET, JWT_ALGORITHM, JWT_EXPIRE_HOURS, PASSWORD_SALT
 from database import get_user_repo
 
-
-# --------------- Password hashing ---------------
-
 def hash_password(password: str) -> str:
-    """Хеширует пароль через PBKDF2-SHA256 с солью из переменной окружения."""
     pw_hash = hashlib.pbkdf2_hmac(
         "sha256", password.encode("utf-8"), PASSWORD_SALT.encode("utf-8"), 100_000
     ).hex()
@@ -24,7 +16,6 @@ def hash_password(password: str) -> str:
 
 
 def verify_password(password: str, pw_hash: str) -> bool:
-    """Проверяет пароль по хешу (соль берётся из переменной окружения)."""
     return (
         hashlib.pbkdf2_hmac(
             "sha256", password.encode("utf-8"), PASSWORD_SALT.encode("utf-8"), 100_000
@@ -32,11 +23,7 @@ def verify_password(password: str, pw_hash: str) -> bool:
         == pw_hash
     )
 
-
-# --------------- JWT ---------------
-
 def create_token(user_id: str, role: str) -> str:
-    """Создаёт JWT-токен."""
     payload = {
         "sub": user_id,
         "role": role,
@@ -46,7 +33,6 @@ def create_token(user_id: str, role: str) -> str:
 
 
 def _decode_token(token: str) -> dict:
-    """Декодирует и валидирует JWT-токен."""
     try:
         return jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
     except jwt.ExpiredSignatureError:
@@ -56,17 +42,12 @@ def _decode_token(token: str) -> dict:
 
 
 def _extract_bearer(request: Request) -> str | None:
-    """Извлекает Bearer токен из заголовка Authorization."""
     auth = request.headers.get("Authorization", "")
     if auth.startswith("Bearer "):
         return auth[7:]
     return None
 
-
-# --------------- FastAPI Dependencies ---------------
-
 async def get_current_user(request: Request) -> dict:
-    """Dependency: требует аутентификацию, возвращает текущего пользователя."""
     token = _extract_bearer(request)
     if not token:
         raise HTTPException(401, "Not authenticated")
@@ -90,7 +71,6 @@ async def get_current_user(request: Request) -> dict:
 
 
 async def get_optional_user(request: Request) -> dict | None:
-    """Dependency: аутентификация опциональна, возвращает None если нет токена."""
     token = _extract_bearer(request)
     if not token:
         return None
@@ -110,7 +90,6 @@ async def get_optional_user(request: Request) -> dict | None:
 
 
 def require_admin(user: dict = Depends(get_current_user)) -> dict:
-    """Dependency: требует роль admin."""
     if user["role"] != "admin":
         raise HTTPException(403, "Admin access required")
     return user

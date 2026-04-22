@@ -176,7 +176,6 @@ export function useMapPlotsQuery({
               !(error instanceof Error && error.name === 'AbortError')
               && isMountedRef.current
             ) {
-              // Keep cached data visible if background refresh fails.
               setProgress(toCompletedMapProgress(cached, true));
             }
           } finally {
@@ -290,11 +289,27 @@ export function useUpdatePlotMutation(
   return useMutation({
     mutationFn: (payload) => updatePlot(id, payload),
     onSuccess: async (...args) => {
+      const [plot] = args;
+      queryClient.setQueryData(plotsQueryKeys.detail(id), plot);
+      if (plot.price_history) {
+        queryClient.setQueryData(['plots', 'price-history', id], plot.price_history);
+      }
       await clearMapCache();
-      await queryClient.invalidateQueries({ queryKey: plotsQueryKeys.detail(id) });
-      await queryClient.invalidateQueries({ queryKey: ['plots', 'price-history', id] });
-      await queryClient.invalidateQueries({ queryKey: plotsQueryKeys.all });
-      await queryClient.invalidateQueries({ queryKey: plotsQueryKeys.mapAll });
+      await queryClient.invalidateQueries({
+        predicate: (query) => {
+          const key = query.queryKey as unknown[];
+          if (key[0] !== 'plots') {
+            return false;
+          }
+          if (key[1] === 'detail' && key[2] === id) {
+            return false;
+          }
+          if (key[1] === 'price-history' && key[2] === id) {
+            return false;
+          }
+          return true;
+        },
+      });
       if (options?.onSuccess) {
         await options.onSuccess(...args);
       }

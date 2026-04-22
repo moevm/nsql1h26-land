@@ -1,16 +1,3 @@
-"""
-Извлечение текстовых фич через Jina Embeddings API.
-
-Локальные модели (sentence-transformers / torch) не используются —
-весь расчёт через HTTP-вызов api.jina.ai. Если JINA_API_KEY не задан
-или запрос упал — возвращаются нулевые фичи (stub), чтобы backend
-не падал.
-
-Фичи считаются только когда входные записи их ещё не содержат
-(см. routes/data_io.py:_build_feature_map). Роуты plots.py вызывают
-extract_features() на create/update объявления.
-"""
-
 import logging
 
 import httpx
@@ -36,7 +23,6 @@ _feature_embs: np.ndarray | None = None
 
 
 def _encode(texts: list[str]) -> np.ndarray | None:
-    """L2-нормализованные эмбеддинги или None при ошибке/отсутствии ключа."""
     if not texts:
         return np.zeros((0, JINA_EMBEDDINGS_DIM), dtype=np.float32)
     if not JINA_API_KEY:
@@ -73,7 +59,6 @@ def _encode(texts: list[str]) -> np.ndarray | None:
 
 
 def _get_feature_embeddings() -> np.ndarray | None:
-    """Эмбеддинги 15 промптов-фич. Считаются один раз и кэшируются."""
     global _feature_embs
     if _feature_embs is None:
         prompts = [FEATURE_DEFINITIONS[k][0] for k in FEATURE_DEFINITIONS]
@@ -121,7 +106,6 @@ def _prepare_text(title: str, description: str, geo_ref: str = "") -> str:
 
 
 def extract_features(title: str, description: str, geo_ref: str = "") -> dict:
-    """Фичи для одного объявления."""
     feature_embs = _get_feature_embeddings()
     if feature_embs is None or feature_embs.size == 0:
         return _empty_result()
@@ -135,7 +119,6 @@ def extract_features(title: str, description: str, geo_ref: str = "") -> dict:
 
 
 def extract_features_batch(records: list[dict]) -> list[dict]:
-    """Фичи для батча записей (используется при массовом импорте)."""
     if not records:
         return []
 

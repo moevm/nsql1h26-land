@@ -1,7 +1,3 @@
-"""
-FastAPI-приложение: сервис объявлений земельных участков.
-"""
-
 import logging
 from contextlib import asynccontextmanager
 
@@ -23,7 +19,6 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Startup / shutdown."""
     logger.info("Starting up...")
     await connect()
     await ensure_indexes()

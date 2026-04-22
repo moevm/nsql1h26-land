@@ -27,9 +27,6 @@ export default function MyPlots() {
   const loading = myPlotsQuery.isLoading;
   const error = myPlotsQuery.error ? getErrorMessage(myPlotsQuery.error) : '';
 
-  // Синхронизируем локальную страницу с ответом сервера только после
-  // завершения запроса (иначе placeholderData сбрасывает пользователя
-  // на предыдущую страницу во время fetch).
   useEffect(() => {
     if (!data || myPlotsQuery.isFetching) return;
     if (data.page !== page) {

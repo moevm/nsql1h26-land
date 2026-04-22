@@ -1,16 +1,5 @@
 import { z } from 'zod';
 
-/**
- * Валидация JSON-файлов для импорта на AdminPanel.
- *
- * plots: запись должна содержать как минимум координаты (lat/lon или lng)
- * и один из идентификаторов заголовка. Остальные поля опциональны —
- * backend дополнит/рассчитает.
- *
- * infra: объект с ключами-коллекциями (metro_stations, hospitals, ...) →
- * массив {name, lat, lon[, type]}.
- */
-
 const latitude = z.number().gte(-90).lte(90);
 const longitude = z.number().gte(-180).lte(180);
 
@@ -60,8 +49,6 @@ export const infraImportPayloadSchema = z
     (record) => Object.keys(record).length > 0,
     'JSON должен содержать хотя бы одну коллекцию',
   );
-
-/** Вытаскивает массив plots из произвольной входной структуры. */
 export function extractPlotsArray(input: unknown): unknown[] {
   if (Array.isArray(input)) return input;
   if (input && typeof input === 'object') {
@@ -71,8 +58,6 @@ export function extractPlotsArray(input: unknown): unknown[] {
   }
   throw new Error('Неверный формат файла: ожидается массив или объект с ключом "plots"/"data"');
 }
-
-/** Форматирует zod-ошибки в читабельное сообщение. */
 export function formatZodError(err: z.ZodError): string {
   const issues = err.issues.slice(0, 5).map((issue) => {
     const path = issue.path.length ? issue.path.join('.') : '(корень)';

@@ -67,7 +67,6 @@ export default function AddPlot() {
       <AlertMessage message={error} />
 
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
-        {/* Map picker */}
         <Surface className="overflow-hidden p-5">
           <div className="flex items-center justify-between mb-3">
             <SectionTitle>Местоположение *</SectionTitle>
@@ -79,7 +78,6 @@ export default function AddPlot() {
           <PlotMapPicker lat={lat} lon={lon} onChange={handleMapClick} />
         </Surface>
 
-        {/* Main info */}
         <Surface className="p-5 space-y-4">
           <SectionTitle>Основная информация</SectionTitle>
 
@@ -156,7 +154,6 @@ export default function AddPlot() {
           </div>
         </Surface>
 
-        {/* Submit */}
         <div className="pt-2">
           <Button type="submit" disabled={createMutation.isPending} className="w-full py-4 text-base">
             {createMutation.isPending ? 'Добавление...' : 'Добавить участок'}

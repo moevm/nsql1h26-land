@@ -21,7 +21,6 @@ export default class ErrorBoundary extends Component<Props, State> {
   }
 
   componentDidCatch(error: Error): void {
-    // Keep local logging lightweight until centralized monitoring is wired in.
     console.error('UI boundary captured an error', error);
   }
 

@@ -1,7 +1,3 @@
-"""
-Маршруты управления инфраструктурными коллекциями.
-"""
-
 import asyncio
 import logging
 from typing import Annotated, Any
@@ -34,14 +30,11 @@ def _serialize(doc: dict) -> dict:
     coords = doc.get("location", {}).get("coordinates", [0, 0])
     doc["lon"] = coords[0] if len(coords) > 0 else 0
     doc["lat"] = coords[1] if len(coords) > 1 else 0
-    # В API-ответе поле `type` для UI — это subtype негативных объектов.
-    # Для обычной инфраструктуры оно не нужно.
     doc["type"] = doc.get("subtype")
     return doc
 
 
 def _trigger_recalc() -> None:
-    """Фоновый пересчёт скоров после изменения инфраструктуры."""
     db = get_db()
 
     async def _run() -> None:
@@ -56,7 +49,6 @@ def _trigger_recalc() -> None:
 
 @router.get("/collections")
 async def list_collections():
-    """Список доступных инфра-коллекций."""
     return {"collections": ALL_COLLECTIONS}
 
 
@@ -66,7 +58,6 @@ async def list_collections():
     responses={400: {"description": "Unknown collection"}},
 )
 async def list_objects(collection: str):
-    """Список объектов в коллекции."""
     if collection not in ALL_COLLECTIONS:
         raise HTTPException(400, f"Unknown collection: {collection}")
     repo = get_infra_repo()
@@ -85,7 +76,6 @@ async def add_object(
     data: InfraObjectCreate,
     _: Annotated[dict, Depends(require_admin)],
 ):
-    """Добавить объект инфраструктуры."""
     if collection not in ALL_COLLECTIONS:
         raise HTTPException(400, f"Unknown collection: {collection}")
     repo = get_infra_repo()
@@ -94,7 +84,6 @@ async def add_object(
         "location": {"type": "Point", "coordinates": [data.lon, data.lat]},
     }
     if data.type and collection == COL_NEGATIVE:
-        # для negative поле `type` в API соответствует subtype в БД
         doc["subtype"] = data.type
 
     inserted_id = await repo.insert_one(collection, doc)
@@ -116,7 +105,6 @@ async def delete_object(
     object_id: str,
     _: Annotated[dict, Depends(require_admin)],
 ):
-    """Удалить объект инфраструктуры."""
     if collection not in ALL_COLLECTIONS:
         raise HTTPException(400, f"Unknown collection: {collection}")
     repo = get_infra_repo()
@@ -140,10 +128,6 @@ async def replace_collection(
     data: list[InfraObjectCreate],
     _: Annotated[dict, Depends(require_admin)],
 ):
-    """
-    Полностью перезаписать коллекцию инфраструктуры.
-    Удаляет все текущие документы и вставляет новые.
-    """
     if collection not in ALL_COLLECTIONS:
         raise HTTPException(400, f"Unknown collection: {collection}")
     repo = get_infra_repo()

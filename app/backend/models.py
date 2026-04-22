@@ -1,16 +1,8 @@
-"""
-Pydantic-модели для запросов и ответов.
-"""
-
 from pydantic import BaseModel, ConfigDict, Field
 from typing import Optional
 from datetime import datetime
 
-
-# ---------- Plots ----------
-
 class PlotCreate(BaseModel):
-    """Данные для создания объявления (лимиты — см. app/docs/data_model.md)."""
     title: str = Field(..., min_length=3, max_length=100)
     description: str = Field(..., min_length=10, max_length=80_000)
     price: float = Field(..., gt=0, le=10_000_000_000)
@@ -27,7 +19,6 @@ class PlotCreate(BaseModel):
 
 
 class PlotUpdate(BaseModel):
-    """Данные для обновления объявления (все поля опциональны)."""
     title: Optional[str] = Field(default=None, min_length=3, max_length=100)
     description: Optional[str] = Field(default=None, max_length=80_000)
     price: Optional[float] = Field(default=None, ge=0, le=10_000_000_000)
@@ -65,7 +56,6 @@ class PriceHistoryPoint(BaseModel):
 
 
 class PlotOut(BaseModel):
-    """Данные объявления для клиента."""
     id: str = Field(alias="_id")
     avito_id: Optional[int] = None
     title: str = ""
@@ -101,7 +91,6 @@ class PlotOut(BaseModel):
 
 
 class PlotListOut(BaseModel):
-    """Постраничный список объявлений."""
     items: list[PlotOut]
     total: int
     page: int
@@ -127,14 +116,10 @@ class SellerProfileOut(BaseModel):
     avg_total_score: Optional[float] = None
     avg_price_per_sotka: Optional[float] = None
 
-
-# ---------- Infrastructure ----------
-
 class InfraObjectCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=80)
     lat: float = Field(..., ge=-90, le=90)
     lon: float = Field(..., ge=-180, le=180)
-    # Для negative_objects — subtype (landfill/industrial/...), max 20
     type: Optional[str] = Field(default=None, max_length=20)
 
 
@@ -146,9 +131,6 @@ class InfraObjectOut(BaseModel):
     type: Optional[str] = None
 
     model_config = ConfigDict(populate_by_name=True)
-
-
-# ---------- Data IO ----------
 
 class ImportResult(BaseModel):
     inserted: int

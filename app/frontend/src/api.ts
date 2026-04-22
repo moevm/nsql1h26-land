@@ -1,13 +1,9 @@
 const API_BASE = '/api';
 
-/* ---------- Auth helpers ---------- */
-
 function getAuthHeaders(): Record<string, string> {
   const token = localStorage.getItem('token');
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
-
-/* ---------- Fetch helper ---------- */
 
 export class ApiError extends Error {
   status: number;
@@ -30,8 +26,6 @@ async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
   }
   return res.json();
 }
-
-/* ---------- Auth ---------- */
 
 export type UserRole = 'admin' | 'user';
 
@@ -65,8 +59,6 @@ export async function registerUser(username: string, password: string): Promise<
 export async function getMe(): Promise<AuthUser> {
   return fetchJson(`${API_BASE}/auth/me`);
 }
-
-/* ---------- Plots ---------- */
 
 export interface PlotDistance {
   name: string;
@@ -112,7 +104,6 @@ export interface Plot {
   updated_at?: string;
   owner_id?: string;
   owner_name?: string;
-  // search fields
   combined_score?: number;
   jina_score?: number;
   price_history?: PriceHistoryPoint[];
@@ -343,8 +334,6 @@ export async function fetchMyPlots(
   return fetchJson(`${API_BASE}/plots/my?${params}`, { signal });
 }
 
-/* ---------- Map ---------- */
-
 export interface MapPlot {
   _id: string;
   title: string;
@@ -463,8 +452,6 @@ export async function fetchPriceHistory(plotId: string, signal?: AbortSignal): P
 export async function fetchSellerProfile(username: string, signal?: AbortSignal): Promise<SellerProfile> {
   return fetchJson(`${API_BASE}/users/${encodeURIComponent(username)}/profile`, { signal });
 }
-
-/* ---------- Data IO ---------- */
 
 export async function exportAll(): Promise<Record<string, unknown[]>> {
   return fetchJson(`${API_BASE}/data/export`);

@@ -32,10 +32,6 @@ export default function ComparePlots() {
       retry: (_count: number, error: unknown) => !isMissingError(error),
     })),
   });
-
-  // Удаляем из списка сравнения те id, которых больше нет в базе
-  // (например, участок был удалён) — иначе вкладка постоянно показывает
-  // «Plot not found» и блокирует остальной контент.
   useEffect(() => {
     queries.forEach((query, index) => {
       if (isMissingError(query.error)) {

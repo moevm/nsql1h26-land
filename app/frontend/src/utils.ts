@@ -1,4 +1,3 @@
-/** Default center of Saint Petersburg */
 export const SPB_CENTER: [number, number] = [59.93, 30.32];
 
 export function formatPrice(p: number): string {
@@ -17,7 +16,6 @@ export function scoreColor(score: number): string {
   return 'var(--c-red)';
 }
 
-/** Hex variant for Leaflet / canvas where CSS vars aren't supported */
 export function scoreHexColor(score: number): string {
   if (score >= 0.7) return '#5cb08a';
   if (score >= 0.4) return '#c9a84c';

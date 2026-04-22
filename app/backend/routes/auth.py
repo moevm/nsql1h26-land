@@ -1,7 +1,3 @@
-"""
-Маршруты аутентификации: регистрация, вход, профиль.
-"""
-
 from datetime import datetime, timezone
 from typing import Annotated
 
@@ -41,7 +37,6 @@ class AuthResponse(BaseModel):
     responses={409: {"description": "Username already exists"}},
 )
 async def register(data: RegisterRequest):
-    """Регистрация нового пользователя (роль user)."""
     repo = get_user_repo()
     existing = await repo.find_by_username(data.username)
     if existing:
@@ -68,7 +63,6 @@ async def register(data: RegisterRequest):
     responses={401: {"description": "Invalid credentials"}},
 )
 async def login(data: LoginRequest):
-    """Вход в систему."""
     repo = get_user_repo()
     user = await repo.find_by_username(data.username)
     if not user:
@@ -87,5 +81,4 @@ async def login(data: LoginRequest):
 
 @router.get("/me", response_model=AuthUser)
 async def get_me(user: Annotated[dict, Depends(get_current_user)]):
-    """Получить текущего пользователя по токену."""
     return AuthUser(**user)

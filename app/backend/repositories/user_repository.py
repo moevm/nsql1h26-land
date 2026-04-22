@@ -1,7 +1,3 @@
-"""
-Репозиторий коллекции users — CRUD-операции с пользователями.
-"""
-
 from bson import ObjectId
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
@@ -9,8 +5,6 @@ from config import COL_USERS
 
 
 class UserRepository:
-    """Абстракция доступа к коллекции users."""
-
     def __init__(self, db: AsyncIOMotorDatabase):
         self._col = db[COL_USERS]
 

@@ -1,7 +1,3 @@
-"""
-Репозиторий коллекции plots — CRUD и поисковые операции.
-"""
-
 from bson import ObjectId
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
@@ -9,12 +5,8 @@ from config import COL_PLOTS
 
 
 class PlotRepository:
-    """Абстракция доступа к коллекции plots."""
-
     def __init__(self, db: AsyncIOMotorDatabase):
         self._col = db[COL_PLOTS]
-
-    # ---------- Read ----------
 
     async def count(self, query_filter: dict | None = None) -> int:
         return await self._col.count_documents(query_filter or {})
@@ -50,11 +42,6 @@ class PlotRepository:
         return await cursor.to_list(length=None)
 
     async def suggest_locations(self, query: str, limit: int = 20) -> list[str]:
-        """
-        Возвращает уникальные непустые значения поля `location`, подходящие
-        под подстроку запроса (регистронезависимо). Пустой запрос — все
-        населённые пункты (в пределах limit), отсортированные по алфавиту.
-        """
         import re
         location_cond: dict = {"$nin": [None, ""]}
         trimmed = (query or "").strip()
@@ -70,13 +57,9 @@ class PlotRepository:
         cursor = self._col.aggregate(pipeline)
         return [doc["_id"] async for doc in cursor if doc.get("_id")]
 
-    # ---------- Create ----------
-
     async def insert_one(self, doc: dict) -> ObjectId:
         result = await self._col.insert_one(doc)
         return result.inserted_id
-
-    # ---------- Update ----------
 
     async def update_one(self, oid: ObjectId, updates: dict) -> bool:
         result = await self._col.update_one({"_id": oid}, {"$set": updates})
@@ -88,8 +71,6 @@ class PlotRepository:
             {"$set": doc},
             upsert=True,
         )
-
-    # ---------- Delete ----------
 
     async def delete_one(self, oid: ObjectId) -> bool:
         result = await self._col.delete_one({"_id": oid})

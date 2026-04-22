@@ -211,10 +211,6 @@ export default function FilterPanel({ visible, filters, initialForm, onApply, on
     reset(initialForm);
   }, [initialForm, reset]);
 
-  // Автофокус — только в момент открытия, не на каждый ре-рендер.
-  // Иначе при любой смене родителя (например, ввод в строку поиска
-  // в PlotsList) эффект пересобирался и уводил фокус из поиска
-  // обратно в первый input фильтров.
   const prevVisibleRef = useRef(false);
   useEffect(() => {
     if (visible && !prevVisibleRef.current) {
@@ -226,8 +222,6 @@ export default function FilterPanel({ visible, filters, initialForm, onApply, on
     prevVisibleRef.current = visible;
   }, [visible]);
 
-  // Escape — в отдельном эффекте, через ref на onClose, чтобы не
-  // перевешивать слушатель при каждом ре-рендере родителя.
   const onCloseRef = useRef(onClose);
   useEffect(() => {
     onCloseRef.current = onClose;
@@ -329,7 +323,6 @@ export default function FilterPanel({ visible, filters, initialForm, onApply, on
         </Surface>
       )}
 
-      {/* Active filter tags */}
       {activeFilterCount > 0 && !visible && (
         <div className="flex flex-wrap gap-2 mb-5">
           {filters.min_price !== undefined && (

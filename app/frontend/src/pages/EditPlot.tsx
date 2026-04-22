@@ -62,7 +62,6 @@ export default function EditPlot() {
     }
   }, [plotQuery.data, reset]);
 
-  // Permission check
   useEffect(() => {
     if (plotQuery.error) {
       setError(getErrorMessage(plotQuery.error));
@@ -104,7 +103,6 @@ export default function EditPlot() {
       <AlertMessage message={error} />
 
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
-        {/* Map */}
         <Surface className="overflow-hidden p-5">
           <div className="flex items-center justify-between mb-3">
             <SectionTitle>Местоположение</SectionTitle>
@@ -113,7 +111,6 @@ export default function EditPlot() {
           <PlotMapPicker lat={lat} lon={lon} onChange={handleMapClick} zoom={12} height="300px" />
         </Surface>
 
-        {/* Main fields */}
         <Surface className="p-5 space-y-4">
           <SectionTitle>Основная информация</SectionTitle>
           <div>

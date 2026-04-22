@@ -1,7 +1,3 @@
-"""
-CRUD-маршруты для объявлений (plots) + поиск.
-"""
-
 import statistics
 from datetime import datetime, timezone
 from typing import Annotated, Optional
@@ -42,7 +38,6 @@ _ERR_NOT_FOUND = "Plot not found"
 
 
 def _get_oid(plot_id: str) -> ObjectId:
-    """Парсит строку в ObjectId, бросает ValueError если невалидно."""
     try:
         return ObjectId(plot_id)
     except Exception as exc:
@@ -50,7 +45,6 @@ def _get_oid(plot_id: str) -> ObjectId:
 
 
 def _prepare_plot_doc(doc: dict) -> dict:
-    """Нормализует документ для ответа клиенту."""
     serialized = _serialize(doc)
     geo = serialized.get("geo_location")
     if ("lat" not in serialized or "lon" not in serialized) and geo and "coordinates" in geo:
@@ -133,7 +127,6 @@ async def list_plots(
     page: Annotated[int, Query(ge=1)] = 1,
     page_size: Annotated[int, Query(ge=1, le=MAX_PAGE_SIZE)] = DEFAULT_PAGE_SIZE,
 ):
-    """Список объявлений с пагинацией, фильтрами и опциональным семантическим поиском."""
     repo = get_plot_repo()
     q = (params["q"] or "").strip()
     sort = params["sort"]
@@ -204,7 +197,6 @@ async def get_plots_for_map(
     page: Annotated[int, Query(ge=1)] = 1,
     page_size: Annotated[int, Query(ge=1, le=5000)] = 1000,
 ):
-    """Эндпоинт для карты: возвращает участки постранично с минимальными полями."""
     repo = get_plot_repo()
     projection = {
         "title": 1, "price": 1, "area_sotki": 1,
@@ -246,7 +238,6 @@ async def my_plots(
     ] = "created_at",
     order: Annotated[str, Query(pattern=ORDER_PATTERN)] = "desc",
 ):
-    """Объявления текущего пользователя. Админ видит объявления без owner_id."""
     repo = get_plot_repo()
 
     if user["role"] == "admin":
@@ -283,7 +274,6 @@ async def suggest_locations(
     q: Annotated[str, Query(max_length=120)] = "",
     limit: Annotated[int, Query(ge=1, le=50)] = 20,
 ):
-    """Автокомплит для фильтра по населённым пунктам."""
     repo = get_plot_repo()
     return await repo.suggest_locations(q, limit=limit)
 
@@ -294,7 +284,6 @@ async def suggest_locations(
     responses={400: {"description": "Location is required"}},
 )
 async def get_location_stats(location: Annotated[str, Query(min_length=2)]):
-    """Агрегированная статистика по участкам выбранной локации."""
     repo = get_plot_repo()
     normalized = location.strip()
     if not normalized:
@@ -328,7 +317,6 @@ async def get_location_stats(location: Annotated[str, Query(min_length=2)]):
     responses={404: {"description": "Invalid ID or plot not found"}},
 )
 async def get_price_history(plot_id: str):
-    """История изменения цены по объявлению."""
     repo = get_plot_repo()
     try:
         oid = _get_oid(plot_id)
@@ -355,7 +343,6 @@ async def get_price_history(plot_id: str):
     responses={404: {"description": "Invalid ID or plot not found"}},
 )
 async def get_plot(plot_id: str):
-    """Получить одно объявление с аналитикой."""
     repo = get_plot_repo()
     try:
         oid = _get_oid(plot_id)
@@ -368,7 +355,6 @@ async def get_plot(plot_id: str):
 
     serialized = _prepare_plot_doc(doc)
     db = get_db()
-    # Вычисляем расстояния в реальном времени
     lat = serialized.get("lat", 0)
     lon = serialized.get("lon", 0)
     if lat and lon:
@@ -380,26 +366,18 @@ async def get_plot(plot_id: str):
 
 @router.post("", response_model=PlotOut, status_code=201)
 async def create_plot(data: PlotCreate, user: Annotated[dict | None, Depends(get_optional_user)]):
-    """
-    Добавить объявление.
-    Автоматически рассчитывает текстовые фичи и расстояния.
-    """
     db = get_db()
     repo = get_plot_repo()
 
-    # Вычисляем площадь если не задана
     area = data.area_sotki or _parse_area(data.title, data.description)
     price_per_sotka = None
     if data.price and area and area > 0:
         price_per_sotka = round(data.price / area, 2)
 
-    # Текстовые фичи
     feat_data = extract_features(data.title, data.description, data.geo_ref)
 
-    # Гео-расстояния
     geo_data = await compute_distances(db, data.lat, data.lon)
 
-    # Total score
     total_score = compute_total_score(
         infra_score=geo_data["infra_score"],
         negative_score=geo_data["negative_score"],
@@ -449,7 +427,6 @@ async def create_plot(data: PlotCreate, user: Annotated[dict | None, Depends(get
     },
 )
 async def delete_plot(plot_id: str, user: Annotated[dict, Depends(get_current_user)]):
-    """Удалить объявление. Админ — любое, пользователь — только своё."""
     repo = get_plot_repo()
     try:
         oid = _get_oid(plot_id)
@@ -481,10 +458,6 @@ async def update_plot(
     data: PlotUpdate,
     user: Annotated[dict, Depends(get_current_user)],
 ):
-    """
-    Обновить объявление. Админ — любое, пользователь — только своё.
-    Пересчитывает фичи и расстояния при изменении описания/координат.
-    """
     db = get_db()
     repo = get_plot_repo()
     try:
@@ -499,7 +472,6 @@ async def update_plot(
     if user["role"] != "admin" and existing.get("owner_id") != user["_id"]:
         raise HTTPException(403, "You can only edit your own plots")
 
-    # Merge updated fields
     updates = data.model_dump(exclude_none=True)
 
     if not updates:
@@ -507,11 +479,9 @@ async def update_plot(
 
     _sync_price_history(existing, updates)
 
-    # Determine if we need to recalculate
     title = updates.get("title", existing.get("title", ""))
     description = updates.get("description", existing.get("description", ""))
     geo_ref = updates.get("geo_ref", existing.get("geo_ref", ""))
-    # Извлекаем текущие координаты из geo_location
     existing_lat, existing_lon = _extract_existing_coords(existing)
     lat = updates.get("lat", existing_lat)
     lon = updates.get("lon", existing_lon)
@@ -527,7 +497,6 @@ async def update_plot(
         updates["feature_score"] = feat_data["feature_score"]
         updates["features_text"] = feat_data["features_text"]
 
-    # Убираем lat/lon из updates — они не хранятся отдельно
     updates.pop("lat", None)
     updates.pop("lon", None)
 
@@ -537,7 +506,6 @@ async def update_plot(
         updates["infra_score"] = geo_data["infra_score"]
         updates["negative_score"] = geo_data["negative_score"]
 
-    # Recalculate price_per_sotka
     if not area:
         area = _parse_area(title, description)
     if area:
@@ -547,7 +515,6 @@ async def update_plot(
         price_per_sotka = round(price / area, 2)
     updates["price_per_sotka"] = price_per_sotka
 
-    # Recalculate total_score
     infra_score = updates.get("infra_score", existing.get("infra_score", 0))
     negative_score = updates.get("negative_score", existing.get("negative_score", 0))
     feature_score = updates.get("feature_score", existing.get("feature_score", 0))
@@ -564,4 +531,10 @@ async def update_plot(
     invalidate_search_cache()
 
     doc = await repo.find_by_id(oid)
-    return PlotOut(**_prepare_plot_doc(doc))
+    serialized = _prepare_plot_doc(doc)
+    fresh_lat = serialized.get("lat", 0)
+    fresh_lon = serialized.get("lon", 0)
+    if fresh_lat and fresh_lon:
+        geo_data = await compute_distances(db, fresh_lat, fresh_lon)
+        serialized["distances"] = geo_data["distances"]
+    return PlotOut(**serialized)

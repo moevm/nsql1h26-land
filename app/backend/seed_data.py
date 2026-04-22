@@ -1,9 +1,3 @@
-"""
-Сиды первичных данных при старте backend:
-  * infra_objects — из SEED_INFRA_FILE, если коллекция пуста
-  * plots         — из SEED_PLOTS_FILE, если коллекция пуста
-"""
-
 import json
 import logging
 import os
@@ -78,7 +72,6 @@ async def _seed_plots() -> None:
         logger.info("Seed plots file %s is empty, skip", path)
         return
 
-    # reuse route-level helpers to avoid duplication
     from routes.data_io import _build_feature_map, _build_plot_doc, _extract_coordinates
     from services.geo_service import compute_distances
     from services.search_service import invalidate_search_cache
@@ -108,7 +101,6 @@ async def _seed_plots() -> None:
 
 
 async def seed_initial_data() -> None:
-    """Последовательно: сначала инфраструктура, затем участки."""
     try:
         await _seed_infrastructure()
     except Exception as exc:

@@ -1,7 +1,3 @@
-"""
-Общие утилиты бэкенда.
-"""
-
 import re
 from typing import Optional
 
@@ -10,13 +6,11 @@ from datetime import datetime
 
 
 def serialize_doc(doc: dict) -> dict:
-    """Конвертирует MongoDB-документ в сериализуемый dict."""
     doc["_id"] = str(doc["_id"])
     return doc
 
 
 def _serialize_value(value):
-    """Рекурсивно приводит значение к JSON-сериализуемому виду."""
     if isinstance(value, ObjectId):
         return str(value)
     if isinstance(value, datetime):
@@ -29,14 +23,12 @@ def _serialize_value(value):
 
 
 def serialize_doc_deep(doc: dict) -> dict:
-    """Рекурсивно конвертирует MongoDB-документ в JSON-сериализуемый dict."""
     for key, value in list(doc.items()):
         doc[key] = _serialize_value(value)
     return doc
 
 
 def parse_area(title: str, description: str) -> Optional[float]:
-    """Извлекает площадь в сотках из заголовка/описания."""
     for text in [title, description]:
         m = re.search(r"(\d+[.,]?\d*)\s*сот", text, re.IGNORECASE)
         if m:

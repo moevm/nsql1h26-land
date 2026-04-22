@@ -39,15 +39,12 @@ export default function AdminPanel() {
     loadStats();
   }, []);
 
-  // Live-обновление счётчиков во время импорта/очистки: пока loading=true,
-  // опрашиваем /api/data/stats каждые 1000 мс.
   useEffect(() => {
     if (!loading) return;
     const timer = setInterval(loadStats, 1000);
     return () => clearInterval(timer);
   }, [loading]);
 
-  // Auto-clear success message after 5s (with proper cleanup)
   useEffect(() => {
     if (!message) return;
     const timer = setTimeout(() => setMessage(''), 5000);
@@ -205,11 +202,9 @@ export default function AdminPanel() {
         subtitle="Управление коллекциями, импорт и экспорт"
       />
 
-      {/* Alerts */}
       <AlertMessage message={message} tone="success" className="animate-fade-in" />
       <AlertMessage message={error} className="animate-fade-in" />
 
-      {/* Export / Import */}
       <Surface className="p-6 mb-6">
         <SectionTitle className="mb-5">Экспорт / Импорт</SectionTitle>
 
@@ -306,7 +301,6 @@ export default function AdminPanel() {
         </Surface>
       </Surface>
 
-      {/* Stats */}
       <Surface className="p-6">
         <div className="flex items-center justify-between mb-5">
           <SectionTitle>Коллекции</SectionTitle>

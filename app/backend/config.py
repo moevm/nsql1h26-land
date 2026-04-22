@@ -8,16 +8,13 @@ def _parse_csv_env(name: str, default: str) -> list[str]:
     raw = os.getenv(name, default)
     return [value.strip() for value in raw.split(",") if value.strip()]
 
-# --- MongoDB ---
 MONGODB_URI = os.getenv("MONGODB_URI", "mongodb://mongo:27017")
 MONGODB_DB = os.getenv("MONGODB_DB", "land_plots")
 
-# --- Collections (см. app/docs/data_model.md) ---
 COL_PLOTS = "plots"
 COL_INFRA = "infra_objects"
 COL_USERS = "users"
 
-# Типы в infra_objects.type (по data_model.md)
 INFRA_TYPES = [
     "metro_station",
     "hospital",
@@ -29,8 +26,6 @@ INFRA_TYPES = [
     "negative",
 ]
 
-# Внешние slug-идентификаторы (в API-путях, ключах export/import, стат.).
-# Внутренне всё хранится в одной коллекции infra_objects с полем type.
 INFRA_SLUG_TO_TYPE = {
     "metro_stations":   "metro_station",
     "hospitals":        "hospital",
@@ -44,7 +39,6 @@ INFRA_SLUG_TO_TYPE = {
 INFRA_TYPE_TO_SLUG = {v: k for k, v in INFRA_SLUG_TO_TYPE.items()}
 INFRA_SLUGS = list(INFRA_SLUG_TO_TYPE.keys())
 
-# Backward-совместимые алиасы на внешние slug — используются в роутах/экспорте.
 COL_METRO = "metro_stations"
 COL_HOSPITALS = "hospitals"
 COL_SCHOOLS = "schools"
@@ -59,7 +53,6 @@ INFRA_COLLECTIONS = [
     COL_KINDERGARTENS, COL_STORES, COL_PICKUP_POINTS, COL_BUS_STOPS,
 ]
 
-# --- Jina API ---
 JINA_API_KEY = os.getenv("JINA_API_KEY", "")
 JINA_RERANK_URL = "https://api.jina.ai/v1/rerank"
 JINA_RERANK_MODEL = "jina-reranker-v2-base-multilingual"
@@ -70,7 +63,6 @@ JINA_EMBEDDINGS_TIMEOUT = float(os.getenv("JINA_EMBEDDINGS_TIMEOUT", "30"))
 JINA_EMBEDDINGS_BATCH = int(os.getenv("JINA_EMBEDDINGS_BATCH", "64"))
 JINA_EMBEDDINGS_TASK = os.getenv("JINA_EMBEDDINGS_TASK", "text-matching")
 
-# --- Feature definitions ---
 FEATURE_THRESHOLD = 0.30
 FEATURE_DEFINITIONS = {
     "has_gas":            ("к участку подведён газ, газоснабжение, газификация", 0.25),
@@ -109,7 +101,6 @@ FEATURE_LABELS = {
     "documents_ready": "документы готовы",
 }
 
-# --- Scoring weights ---
 WEIGHTS = {
     "infra":    0.35,
     "negative": 0.25,
@@ -117,35 +108,29 @@ WEIGHTS = {
     "price":    0.15,
 }
 
-# --- Geo thresholds ---
 INFRA_MAX_DISTANCE_KM = 50.0
 NEGATIVE_MIN_DISTANCE_KM = 0.5
 NEGATIVE_MAX_DISTANCE_KM = 20.0
 
-# --- Search ---
-SEARCH_VECTOR_TOP_K = 100        # кол-во кандидатов для BM25 pre-ranking
+SEARCH_VECTOR_TOP_K = 100
 SEARCH_JINA_TOP_N = 20
-JINA_SCORE_THRESHOLD = 0.1        # порог Jina score — ниже отсекаем
-ALPHA = 0.6
-BETA = 0.4
+JINA_SCORE_THRESHOLD = 0.1
+ALPHA = 0.3
+BETA = 0.7
 
-# --- Auth / JWT ---
 JWT_SECRET = os.getenv("JWT_SECRET", "land-plots-dev-secret-key-change-in-prod")
 JWT_ALGORITHM = "HS256"
 JWT_EXPIRE_HOURS = 72
 PASSWORD_SALT = os.getenv("PASSWORD_SALT", JWT_SECRET)
 
-# --- Pagination ---
 DEFAULT_PAGE_SIZE = 20
 MAX_PAGE_SIZE = 100
 
-# --- CORS ---
 CORS_ORIGINS = _parse_csv_env(
     "CORS_ORIGINS",
     "http://localhost:3000,http://localhost:5173",
 )
 
-# --- Seeding ---
 SEED_ADMIN_USERNAME = os.getenv("SEED_ADMIN_USERNAME", "admin")
 SEED_ADMIN_PASSWORD = os.getenv("SEED_ADMIN_PASSWORD", "admin")
 SEED_USER_USERNAME = os.getenv("SEED_USER_USERNAME", "user")

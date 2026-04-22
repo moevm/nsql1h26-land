@@ -48,7 +48,6 @@ function PlotCard({
         onFocus={prefetchDetail}
         onTouchStart={prefetchDetail}
       >
-      {/* Image */}
       {plot.thumbnail ? (
         <div className="relative h-44 overflow-hidden">
           <img
@@ -63,7 +62,6 @@ function PlotCard({
               background: 'linear-gradient(to top, var(--c-card) 0%, transparent 50%)',
             }}
           />
-          {/* Score badge overlay */}
           <div className="absolute top-3 right-3">
             <ScoreGauge value={plot.total_score} size={42} />
           </div>
@@ -120,7 +118,6 @@ function PlotCard({
           )}
         </div>
 
-        {/* Analytics labels */}
         <div className="flex flex-wrap gap-2 mt-auto">
           {[
             { v: plot.infra_score, l: 'Инфра', c: 'var(--c-blue)' },
@@ -468,7 +465,6 @@ export default function PlotsList() {
 
   return (
     <div className="animate-fade-in">
-      {/* Hero section */}
       <PageHeader
         title="Каталог участков"
         subtitle="Поиск и аналитика земельных участков Санкт-Петербурга и Ленинградской области"
@@ -477,7 +473,6 @@ export default function PlotsList() {
         subtitleStyle={{ fontFamily: 'var(--font-body)' }}
       />
 
-      {/* Search bar */}
       <form onSubmit={handleSearch} className="mb-6">
         <div className="flex gap-3">
           <div className="flex-1 relative">
@@ -512,7 +507,6 @@ export default function PlotsList() {
         </div>
       )}
 
-      {/* Sort + Filter controls */}
       <div className="flex items-center gap-2 mb-4 flex-wrap">
         <span className="text-xs uppercase tracking-wider mr-2" style={{ color: 'var(--c-text-dim)', fontFamily: 'var(--font-mono)' }}>
           Сортировка
@@ -595,7 +589,6 @@ export default function PlotsList() {
         onClose={closeFilters}
       />
 
-      {/* Loading / Error */}
       {showResultsLoading && <ResultsLoadingScreen semanticMode={Boolean(queryParam)} />}
       {error && (
         <p className="text-center py-16" style={{ color: 'var(--c-red)' }} role="alert">{error}</p>
@@ -607,7 +600,6 @@ export default function PlotsList() {
         </p>
       )}
 
-      {/* Grid */}
       {!showResultsLoading && data && data.items.length > 0 && (
         <>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5 stagger-children">
@@ -622,7 +614,6 @@ export default function PlotsList() {
             ))}
           </div>
 
-          {/* Pagination */}
           {data.pages > 1 && (
             <Pagination
               currentPage={currentPage}

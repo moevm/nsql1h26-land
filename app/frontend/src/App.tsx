@@ -56,8 +56,6 @@ export default function App() {
     </ErrorBoundary>
   );
 
-  // Пока идёт проверка токена — показываем скелетон, а не форму входа
-  // (иначе пользователь с валидным токеном увидит флеш логина).
   if (loading) {
     return (
       <div className="app-shell min-h-screen flex items-center justify-center">
@@ -66,7 +64,6 @@ export default function App() {
     );
   }
 
-  // Гейт: без авторизации доступна только страница входа.
   if (!user) {
     return (
       <div className="app-shell min-h-screen flex flex-col">

@@ -1,12 +1,3 @@
-"""
-Сервис поиска: BM25 pre-ranking + feature scoring + Jina Reranker.
-
-Ключевые принципы:
-  1. Единые фильтры и сортировки с обычным листингом
-  2. Стабильная пагинация (deterministic order + page clamp)
-  3. Кэш ранжированных результатов по (query + filters)
-"""
-
 import hashlib
 import json
 import logging
@@ -53,11 +44,8 @@ _NUMERIC_SORT_FIELDS = {
     "bm25_score",
 }
 
-# --------------- BM25 helpers ---------------
-
 
 def _tokenize_ru(text: str) -> list[str]:
-    """Простая токенизация для русского текста."""
     return re.findall(r"[а-яёa-z0-9]+", text.lower())
 
 
@@ -66,10 +54,6 @@ def _bm25_rank(
     candidates: list[dict],
     top_k: int | None = SEARCH_VECTOR_TOP_K,
 ) -> list[dict]:
-    """
-    BM25 ранжирование кандидатов по текстовому запросу.
-    Добавляет поле bm25_score, возвращает top_k (или все при top_k=None).
-    """
     if not query or not query.strip():
         for candidate in candidates:
             candidate["bm25_score"] = 0.0
@@ -91,10 +75,6 @@ def _bm25_rank(
 
 
 def _compute_combined(candidates: list[dict]) -> list[dict]:
-    """
-    Нормализует feature_score и bm25_score в [0,1] и вычисляет
-    combined_score = alpha*feature_norm + beta*bm25_norm.
-    """
     if not candidates:
         return candidates
 
@@ -115,9 +95,7 @@ def _compute_combined(candidates: list[dict]) -> list[dict]:
     candidates.sort(key=lambda item: item["combined_score"], reverse=True)
     return candidates
 
-
-# --------------- In-memory search cache ---------------
-CACHE_TTL = 300  # 5 минут
+CACHE_TTL = 300
 MAX_CACHE_SIZE = 50
 
 
@@ -131,7 +109,6 @@ _search_cache: dict[str, _CacheEntry] = {}
 
 
 def invalidate_search_cache() -> None:
-    """Очищает кэш поиска после изменения данных объявлений."""
     _search_cache.clear()
 
 
@@ -153,9 +130,6 @@ def _evict_expired() -> None:
     while len(_search_cache) > MAX_CACHE_SIZE:
         oldest_key = min(_search_cache, key=lambda key: _search_cache[key].timestamp)
         del _search_cache[oldest_key]
-
-
-# --------------- Jina Reranker ---------------
 
 
 def _extract_jina_scores(results: list[dict], candidate_count: int) -> dict[int, float]:
@@ -213,7 +187,6 @@ async def jina_rerank(
     candidates: list[dict],
     top_n: int,
 ) -> list[dict]:
-    """Семантический реранкинг через Jina API."""
     if not query or not query.strip():
         return candidates[:top_n]
 
@@ -258,17 +231,11 @@ async def jina_rerank(
         logger.error("Jina Reranker error: %s", error)
         return candidates[:requested_top_n]
 
-    # Jina иногда возвращает только часть документов (top_n), поэтому
-    # доклеиваем остальные в исходном порядке, чтобы не терять выдачу.
     scores_by_index = _extract_jina_scores(data.get("results", []), len(candidates))
     return _merge_scored_candidates(candidates, scores_by_index, requested_top_n)
 
 
 def _prioritize_by_threshold(results: list[dict], threshold: float) -> list[dict]:
-    """
-    Не удаляет документы ниже порога, а только переносит их в хвост.
-    Это сохраняет корректные total/pages и стабильную пагинацию.
-    """
     if threshold <= 0:
         return results
 
@@ -315,7 +282,6 @@ def _extract_sort_value(item: dict, sort_field: str, sort_order: str):
 
 
 def _sort_results(results: list[dict], sort_field: str, sort_order: str) -> list[dict]:
-    """Сортирует результаты по полю каталога или по релевантности."""
     if not results:
         return []
 
@@ -342,9 +308,6 @@ def _compute_rerank_depth(total_candidates: int, page: int, page_size: int) -> i
     return min(total_candidates, max(baseline, headroom))
 
 
-# --------------- Main search ---------------
-
-
 async def search_plots(
     db: AsyncIOMotorDatabase,
     query: str,
@@ -354,10 +317,6 @@ async def search_plots(
     sort_field: str = "relevance",
     sort_order: str = "desc",
 ) -> tuple[list[dict], int, int, int]:
-    """
-    Поисковый пайплайн: BM25 + feature scoring + Jina Reranker.
-    Возвращает (page_items, total, pages, current_page).
-    """
     query_text = (query or "").strip()
     if not query_text:
         return [], 0, 1, 1
@@ -389,13 +348,10 @@ async def search_plots(
         _search_cache[key] = _CacheEntry(results=[], timestamp=now)
         return [], 0, 1, 1
 
-    # 1) BM25 ранжирование по всей отфильтрованной выборке
     bm25_ranked = _bm25_rank(query_text, candidates, top_k=len(candidates))
 
-    # 2) Комбинированный скор: alpha*feature + beta*bm25
     bm25_ranked = _compute_combined(bm25_ranked)
 
-    # 3) Реранжим только "голову" списка с запасом под текущую/следующие страницы
     rerank_depth = _compute_rerank_depth(len(bm25_ranked), safe_page, safe_page_size)
     head = bm25_ranked[:rerank_depth]
     tail = bm25_ranked[rerank_depth:]

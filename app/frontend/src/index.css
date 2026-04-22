@@ -146,9 +146,6 @@ a {
 .app-brand-mark svg {
   display: block;
 }
-
-/* Кастомный file-input. Нативный <input type="file"> скрыт, клик по
-   обёртке .file-input открывает диалог выбора файла. */
 .file-input {
   display: flex;
   align-items: center;
@@ -575,13 +572,6 @@ a {
 .btn-danger:hover {
   background: var(--c-red-dim);
 }
-
-/*
- * Квадратные кнопки-иконки. Иначе .btn-ghost/.btn-primary/.btn-danger
- * навязывают padding 0.5rem 0.95rem, из-за чего svg-иконки внутри
- * кнопок визуально зажимаются и выглядят мелко независимо от своего
- * размера.
- */
 .btn-ghost.btn-icon,
 .btn-primary.btn-icon,
 .btn-danger.btn-icon {

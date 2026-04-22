@@ -36,7 +36,6 @@ def normalize_sort(sort_field: str | None, *, has_query: bool) -> str:
 
 def build_sort_spec(sort_field: str, sort_order: str) -> list[tuple[str, int]]:
     direction = 1 if normalize_order(sort_order) == "asc" else -1
-    # relevance нельзя отсортировать в MongoDB, поэтому в БД всегда fallback
     if sort_field == "relevance":
         sort_field = "created_at"
     return [(sort_field, direction), ("_id", direction)]

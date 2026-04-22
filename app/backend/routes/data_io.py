@@ -1,7 +1,3 @@
-"""
-Маршруты импорта/экспорта данных.
-"""
-
 import asyncio
 import logging
 from datetime import datetime, timezone
@@ -37,7 +33,6 @@ def _schedule_background_task(coro: Any) -> None:
 
 
 def _trigger_recalc() -> None:
-    """Фоновый пересчёт скоров после изменения инфраструктуры."""
     db = get_db()
 
     async def _run() -> None:
@@ -167,19 +162,13 @@ def _build_plot_doc(rec: dict, feat: dict[str, Any], geo_data: dict, lat: float,
         "price_history": _build_price_history(rec, price),
     }
 
-
-# ---------- Экспорт ----------
-
 @router.get("/export")
 async def export_all():
-    """Экспорт ВСЕХ коллекций в JSON."""
     plot_repo = get_plot_repo()
     infra_repo = get_infra_repo()
     result = {}
-    # plots
     docs = await plot_repo.find_all()
     result[COL_PLOTS] = [_serialize_doc(d) for d in docs]
-    # infra collections
     for col_name in INFRA_SLUGS:
         docs = await infra_repo.find_all(col_name)
         result[col_name] = [_serialize_doc(d) for d in docs]
@@ -191,7 +180,6 @@ async def export_all():
     responses={400: {"description": "Unknown collection"}},
 )
 async def export_collection(collection: str):
-    """Экспорт одной коллекции в JSON."""
     if collection not in ALL_COLLECTIONS:
         raise HTTPException(400, f"Unknown collection: {collection}")
     if collection == COL_PLOTS:
@@ -206,19 +194,11 @@ async def export_collection(collection: str):
         "data": [_serialize_doc(d) for d in docs],
     }))
 
-
-# ---------- Импорт ----------
-
 @router.post("/import/plots")
 async def import_plots(
     records: list[dict],
     _: Annotated[dict, Depends(require_admin)],
 ):
-    """
-    Импорт объявлений.
-    Если в записи уже есть features — используем их.
-    Если нет — рассчитываем автоматически.
-    """
     db = get_db()
     plot_repo = get_plot_repo()
 
@@ -239,7 +219,6 @@ async def import_plots(
         geo_data = await compute_distances(db, lat, lon)
         doc = _build_plot_doc(rec, feat, geo_data, lat, lon)
 
-        # upsert по avito_id если есть
         if doc.get("avito_id"):
             await plot_repo.upsert_by_avito_id(doc["avito_id"], doc)
         else:
@@ -260,7 +239,6 @@ async def clear_collection(
     collection: str,
     _: Annotated[dict, Depends(require_admin)],
 ):
-    """Очистить коллекцию."""
     if collection not in ALL_COLLECTIONS:
         raise HTTPException(400, f"Unknown collection: {collection}")
     if collection == COL_PLOTS:
@@ -277,7 +255,6 @@ async def clear_collection(
 
 @router.get("/stats")
 async def get_stats():
-    """Статистика по всем коллекциям."""
     plot_repo = get_plot_repo()
     infra_repo = get_infra_repo()
     stats = {}
