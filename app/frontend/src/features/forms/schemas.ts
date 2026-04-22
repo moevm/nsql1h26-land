@@ -1,12 +1,18 @@
 import { z } from 'zod';
 
-const optionalNonNegativeNumber = z
-  .string()
-  .trim()
-  .refine(
-    (value) => value === '' || (!Number.isNaN(Number(value)) && Number(value) >= 0),
-    'Введите число >= 0',
-  );
+function optionalBoundedNumber(max: number, maxMessage: string) {
+  return z
+    .string()
+    .trim()
+    .refine(
+      (value) => {
+        if (value === '') return true;
+        const n = Number(value);
+        return !Number.isNaN(n) && Number.isFinite(n) && n >= 0 && n <= max;
+      },
+      maxMessage,
+    );
+}
 
 function requiredPositiveNumber(max: number, message: string) {
   return z
@@ -78,25 +84,18 @@ export const plotFormSchema = z.object({
 
 export type PlotFormValues = z.infer<typeof plotFormSchema>;
 
-const optionalScoreNumber = z
-  .string()
-  .trim()
-  .refine(
-    (value) => value === '' || (!Number.isNaN(Number(value)) && Number(value) >= 0 && Number(value) <= 1),
-    'Введите число от 0 до 1',
-  );
+const PRICE_MAX = 10_000_000_000;
+const AREA_MAX = 100_000;
+const PRICE_PER_SOTKA_MAX = 1_000_000_000;
 
 export const filterFormSchema = z
   .object({
-    min_price: optionalNonNegativeNumber,
-    max_price: optionalNonNegativeNumber,
-    min_area: optionalNonNegativeNumber,
-    max_area: optionalNonNegativeNumber,
-    min_price_per_sotka: optionalNonNegativeNumber,
-    max_price_per_sotka: optionalNonNegativeNumber,
-    min_score: optionalScoreNumber,
-    min_infra: optionalScoreNumber,
-    min_feature: optionalScoreNumber,
+    min_price: optionalBoundedNumber(PRICE_MAX, 'От 0 до 10 000 000 000 ₽'),
+    max_price: optionalBoundedNumber(PRICE_MAX, 'От 0 до 10 000 000 000 ₽'),
+    min_area: optionalBoundedNumber(AREA_MAX, 'От 0 до 100 000 соток'),
+    max_area: optionalBoundedNumber(AREA_MAX, 'От 0 до 100 000 соток'),
+    min_price_per_sotka: optionalBoundedNumber(PRICE_PER_SOTKA_MAX, 'От 0 до 1 000 000 000 ₽'),
+    max_price_per_sotka: optionalBoundedNumber(PRICE_PER_SOTKA_MAX, 'От 0 до 1 000 000 000 ₽'),
     location: z.string().trim().max(120, 'Максимум 120 символов'),
   })
   .superRefine((value, ctx) => {

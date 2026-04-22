@@ -133,10 +133,27 @@ export default function PlotDetail() {
   const sellerProfileQuery = useSellerProfileQuery(plot?.owner_name);
   const sellerProfileError = sellerProfileQuery.error ? getErrorMessage(sellerProfileQuery.error) : '';
 
-  const priceHistoryData = (priceHistoryQuery.data ?? []).map((point) => ({
-    date: new Date(point.at).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' }),
-    price: point.price,
-  }));
+  // В качестве X используем числовой timestamp, иначе две точки в один
+  // день получают одинаковый ключ и тултип показывает только одну из них.
+  const priceHistoryData = (priceHistoryQuery.data ?? [])
+    .map((point) => ({
+      ts: new Date(point.at).getTime(),
+      price: point.price,
+    }))
+    .filter((point) => Number.isFinite(point.ts))
+    .sort((a, b) => a.ts - b.ts);
+
+  const formatHistoryTick = (value: number) =>
+    new Date(value).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' });
+
+  const formatHistoryLabel = (value: number) =>
+    new Date(value).toLocaleString('ru-RU', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
 
   const canEdit = plot && user && (isAdmin || plot.owner_id === user._id);
   const canDelete = canEdit;
@@ -307,10 +324,19 @@ export default function PlotDetail() {
                 <ResponsiveContainer>
                   <LineChart data={priceHistoryData} margin={{ top: 8, right: 8, left: 8, bottom: 8 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="var(--c-border)" />
-                    <XAxis dataKey="date" stroke="var(--c-text-dim)" fontSize={11} />
-                    <YAxis stroke="var(--c-text-dim)" fontSize={11} />
+                    <XAxis
+                      dataKey="ts"
+                      type="number"
+                      domain={['dataMin', 'dataMax']}
+                      scale="time"
+                      tickFormatter={formatHistoryTick}
+                      stroke="var(--c-text-dim)"
+                      fontSize={11}
+                    />
+                    <YAxis stroke="var(--c-text-dim)" fontSize={11} domain={['auto', 'auto']} />
                     <Tooltip
-                      formatter={(value) => (typeof value === 'number' ? formatPriceFull(value) : String(value ?? ''))}
+                      formatter={(value) => (typeof value === 'number' ? [formatPriceFull(value), 'Цена'] : [String(value ?? ''), 'Цена'])}
+                      labelFormatter={(value) => (typeof value === 'number' ? formatHistoryLabel(value) : '')}
                       labelStyle={{ color: 'var(--c-text-dim)' }}
                       contentStyle={{
                         background: 'var(--c-surface)',
@@ -318,7 +344,7 @@ export default function PlotDetail() {
                         color: 'var(--c-text)',
                       }}
                     />
-                    <Line type="monotone" dataKey="price" stroke="var(--c-accent)" strokeWidth={2} dot={false} />
+                    <Line type="monotone" dataKey="price" stroke="var(--c-accent)" strokeWidth={2} dot={{ r: 3 }} activeDot={{ r: 5 }} />
                   </LineChart>
                 </ResponsiveContainer>
               </div>

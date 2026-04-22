@@ -9,6 +9,15 @@ function getAuthHeaders(): Record<string, string> {
 
 /* ---------- Fetch helper ---------- */
 
+export class ApiError extends Error {
+  status: number;
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+  }
+}
+
 async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
   const headers: Record<string, string> = {
     ...getAuthHeaders(),
@@ -17,7 +26,7 @@ async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, { ...init, headers });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
-    throw new Error(body.detail || `${res.status} ${res.statusText}`);
+    throw new ApiError(body.detail || `${res.status} ${res.statusText}`, res.status);
   }
   return res.json();
 }
@@ -269,6 +278,14 @@ export async function fetchPlots({
 
 export async function fetchPlot(id: string, signal?: AbortSignal): Promise<Plot> {
   return fetchJson(`${API_BASE}/plots/${id}`, { signal });
+}
+
+export async function fetchLocationSuggestions(
+  query: string,
+  { limit = 20, signal }: { limit?: number; signal?: AbortSignal } = {},
+): Promise<string[]> {
+  const params = new URLSearchParams({ q: query, limit: String(limit) });
+  return fetchJson(`${API_BASE}/plots/locations/suggest?${params}`, { signal });
 }
 
 export async function deletePlot(id: string): Promise<void> {

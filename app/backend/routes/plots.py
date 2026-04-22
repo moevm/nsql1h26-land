@@ -278,6 +278,16 @@ async def my_plots(
     )
 
 
+@router.get("/locations/suggest", response_model=list[str])
+async def suggest_locations(
+    q: Annotated[str, Query(max_length=120)] = "",
+    limit: Annotated[int, Query(ge=1, le=50)] = 20,
+):
+    """Автокомплит для фильтра по населённым пунктам."""
+    repo = get_plot_repo()
+    return await repo.suggest_locations(q, limit=limit)
+
+
 @router.get(
     "/stats/location",
     response_model=LocationStatsOut,

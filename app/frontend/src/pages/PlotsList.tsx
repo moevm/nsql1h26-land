@@ -258,9 +258,6 @@ const FILTER_PARAM_KEYS: Array<keyof FormState> = [
   'max_area',
   'min_price_per_sotka',
   'max_price_per_sotka',
-  'min_score',
-  'min_infra',
-  'min_feature',
   'location',
 ];
 
@@ -301,9 +298,6 @@ function getFiltersFromSearchParams(searchParams: URLSearchParams): PlotFilters 
     max_area: parseFilterNumber(searchParams, 'max_area'),
     min_price_per_sotka: parseFilterNumber(searchParams, 'min_price_per_sotka'),
     max_price_per_sotka: parseFilterNumber(searchParams, 'max_price_per_sotka'),
-    min_score: parseFilterNumber(searchParams, 'min_score'),
-    min_infra: parseFilterNumber(searchParams, 'min_infra'),
-    min_feature: parseFilterNumber(searchParams, 'min_feature'),
     location: location || undefined,
   };
 }
@@ -320,9 +314,6 @@ function toFormState(filters: PlotFilters): FormState {
     max_area: toText(filters.max_area),
     min_price_per_sotka: toText(filters.min_price_per_sotka),
     max_price_per_sotka: toText(filters.max_price_per_sotka),
-    min_score: toText(filters.min_score),
-    min_infra: toText(filters.min_infra),
-    min_feature: toText(filters.min_feature),
     location: filters.location ?? '',
   };
 }
@@ -403,7 +394,7 @@ export default function PlotsList() {
     applySearchQuery(searchQuery);
   }
 
-  function applyFiltersFromForm(form: FormState) {
+  const applyFiltersFromForm = useCallback((form: FormState) => {
     setSearchParams((prev) => {
       const params = new URLSearchParams(prev);
       params.set('page', '1');
@@ -420,9 +411,9 @@ export default function PlotsList() {
       return params;
     });
     setShowFilters(false);
-  }
+  }, [setSearchParams]);
 
-  function clearFilters() {
+  const clearFilters = useCallback(() => {
     setSearchParams((prev) => {
       const params = new URLSearchParams(prev);
       FILTER_PARAM_KEYS.forEach((key) => params.delete(key));
@@ -437,7 +428,9 @@ export default function PlotsList() {
       return params;
     });
     setShowFilters(false);
-  }
+  }, [setSearchParams]);
+
+  const closeFilters = useCallback(() => setShowFilters(false), []);
 
   const changePage = useCallback((nextPage: number, replace = false) => {
     const boundedLow = Math.max(1, Math.floor(nextPage));
@@ -599,7 +592,7 @@ export default function PlotsList() {
         initialForm={formFilters}
         onApply={applyFiltersFromForm}
         onClear={clearFilters}
-        onClose={() => setShowFilters(false)}
+        onClose={closeFilters}
       />
 
       {/* Loading / Error */}

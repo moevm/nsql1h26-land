@@ -49,6 +49,27 @@ class PlotRepository:
         cursor = self._col.find(query_filter or {}, projection)
         return await cursor.to_list(length=None)
 
+    async def suggest_locations(self, query: str, limit: int = 20) -> list[str]:
+        """
+        Возвращает уникальные непустые значения поля `location`, подходящие
+        под подстроку запроса (регистронезависимо). Пустой запрос — все
+        населённые пункты (в пределах limit), отсортированные по алфавиту.
+        """
+        import re
+        location_cond: dict = {"$nin": [None, ""]}
+        trimmed = (query or "").strip()
+        if trimmed:
+            location_cond = {"$regex": re.escape(trimmed), "$options": "i"}
+        pipeline = [
+            {"$match": {"location": location_cond}},
+            {"$group": {"_id": "$location"}},
+            {"$match": {"_id": {"$nin": [None, ""]}}},
+            {"$sort": {"_id": 1}},
+            {"$limit": max(1, limit)},
+        ]
+        cursor = self._col.aggregate(pipeline)
+        return [doc["_id"] async for doc in cursor if doc.get("_id")]
+
     # ---------- Create ----------
 
     async def insert_one(self, doc: dict) -> ObjectId:

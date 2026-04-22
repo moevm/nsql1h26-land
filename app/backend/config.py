@@ -59,13 +59,16 @@ INFRA_COLLECTIONS = [
     COL_KINDERGARTENS, COL_STORES, COL_PICKUP_POINTS, COL_BUS_STOPS,
 ]
 
-# --- Sentence-transformers ---
-EMBEDDINGS_MODEL_NAME = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
-
 # --- Jina API ---
 JINA_API_KEY = os.getenv("JINA_API_KEY", "")
 JINA_RERANK_URL = "https://api.jina.ai/v1/rerank"
 JINA_RERANK_MODEL = "jina-reranker-v2-base-multilingual"
+JINA_EMBEDDINGS_URL = "https://api.jina.ai/v1/embeddings"
+JINA_EMBEDDINGS_MODEL = os.getenv("JINA_EMBEDDINGS_MODEL", "jina-embeddings-v3")
+JINA_EMBEDDINGS_DIM = int(os.getenv("JINA_EMBEDDINGS_DIM", "512"))
+JINA_EMBEDDINGS_TIMEOUT = float(os.getenv("JINA_EMBEDDINGS_TIMEOUT", "30"))
+JINA_EMBEDDINGS_BATCH = int(os.getenv("JINA_EMBEDDINGS_BATCH", "64"))
+JINA_EMBEDDINGS_TASK = os.getenv("JINA_EMBEDDINGS_TASK", "text-matching")
 
 # --- Feature definitions ---
 FEATURE_THRESHOLD = 0.30

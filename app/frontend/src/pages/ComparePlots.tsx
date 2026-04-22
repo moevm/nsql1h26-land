@@ -1,14 +1,18 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { useQueries } from '@tanstack/react-query';
 import { X } from 'lucide-react';
 
-import { fetchPlot, type Plot } from '../api';
+import { ApiError, fetchPlot, type Plot } from '../api';
 import { PageHeader } from '../components/PageHeader';
 import ScoreGauge from '../components/ScoreGauge';
 import { Button } from '../components/ui';
 import { formatPrice, formatPriceFull, getErrorMessage } from '../utils';
 import { useUserPrefsStore } from '../stores/userPrefsStore';
+
+function isMissingError(error: unknown): boolean {
+  return error instanceof ApiError && error.status === 404;
+}
 
 function toText(value: unknown): string {
   if (value === null || value === undefined || value === '') return '—';
@@ -25,11 +29,27 @@ export default function ComparePlots() {
     queries: comparePlotIds.map((id) => ({
       queryKey: ['plots', 'detail', id],
       queryFn: ({ signal }: { signal: AbortSignal }) => fetchPlot(id, signal),
+      retry: (_count: number, error: unknown) => !isMissingError(error),
     })),
   });
 
+  // Удаляем из списка сравнения те id, которых больше нет в базе
+  // (например, участок был удалён) — иначе вкладка постоянно показывает
+  // «Plot not found» и блокирует остальной контент.
+  useEffect(() => {
+    queries.forEach((query, index) => {
+      if (isMissingError(query.error)) {
+        const staleId = comparePlotIds[index];
+        if (staleId) toggleCompare(staleId);
+      }
+    });
+  }, [queries, comparePlotIds, toggleCompare]);
+
   const isLoading = queries.some((query) => query.isLoading);
-  const firstError = queries.find((query) => query.error)?.error;
+  const nonMissingError = queries.find(
+    (query) => query.error && !isMissingError(query.error),
+  )?.error;
+  const missingCount = queries.filter((query) => isMissingError(query.error)).length;
   const plots = useMemo(
     () => queries.map((query) => query.data).filter((plot): plot is Plot => Boolean(plot)),
     [queries],
@@ -63,13 +83,18 @@ export default function ComparePlots() {
       </div>
 
       {isLoading && <p className="py-12 text-center" style={{ color: 'var(--c-text-dim)' }}>Загрузка данных для сравнения...</p>}
-      {firstError && (
+      {nonMissingError && (
         <p className="py-6 text-center" style={{ color: 'var(--c-red)' }}>
-          {getErrorMessage(firstError)}
+          {getErrorMessage(nonMissingError)}
+        </p>
+      )}
+      {missingCount > 0 && (
+        <p className="mb-4 text-xs" style={{ color: 'var(--c-text-dim)' }}>
+          Убрано из сравнения {missingCount} {missingCount === 1 ? 'объявление' : 'объявлений'} — их больше нет в базе
         </p>
       )}
 
-      {!isLoading && !firstError && plots.length > 0 && (
+      {!isLoading && !nonMissingError && plots.length > 0 && (
         <div className="overflow-x-auto rounded-xl" style={{ border: '1px solid var(--c-border)' }}>
           <table className="w-full min-w-[860px]" style={{ borderCollapse: 'collapse' }}>
             <thead style={{ background: 'var(--c-surface)' }}>
@@ -90,11 +115,11 @@ export default function ComparePlots() {
                         onClick={() => toggleCompare(plot._id)}
                         variant="ghost"
                         size="icon"
-                        className="p-1 rounded"
+                        className="p-2 rounded"
                         style={{ color: 'var(--c-text-dim)' }}
                         aria-label="Убрать из сравнения"
                       >
-                        <X size={22} />
+                        <X size={15} />
                       </Button>
                     </div>
                   </th>

@@ -115,13 +115,13 @@ export default function MyPlots() {
                     disabled={deleteMutation.isPending}
                     variant="ghost"
                     size="icon"
-                    className="p-1.5 rounded-lg"
+                    className="p-2 rounded-lg"
                     style={{ color: 'var(--c-text-dim)' }}
                     onMouseEnter={(e) => e.currentTarget.style.color = 'var(--c-red)'}
                     onMouseLeave={(e) => e.currentTarget.style.color = 'var(--c-text-dim)'}
                     title="Удалить"
                   >
-                    <Trash2 size={20} />
+                    <Trash2 size={15} />
                   </Button>
                 </div>
               </Surface>

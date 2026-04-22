@@ -576,6 +576,31 @@ a {
   background: var(--c-red-dim);
 }
 
+/*
+ * Квадратные кнопки-иконки. Иначе .btn-ghost/.btn-primary/.btn-danger
+ * навязывают padding 0.5rem 0.95rem, из-за чего svg-иконки внутри
+ * кнопок визуально зажимаются и выглядят мелко независимо от своего
+ * размера.
+ */
+.btn-ghost.btn-icon,
+.btn-primary.btn-icon,
+.btn-danger.btn-icon {
+  width: 2.75rem;
+  height: 2.75rem;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.btn-ghost.btn-icon > svg,
+.btn-primary.btn-icon > svg,
+.btn-danger.btn-icon > svg {
+  flex-shrink: 0;
+  pointer-events: none;
+}
+
 .input-field {
   width: 100%;
   background: color-mix(in srgb, var(--c-surface) 86%, transparent);

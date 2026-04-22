@@ -3,6 +3,7 @@ import { AnimatePresence } from 'framer-motion';
 import {
   Database,
   GitCompare,
+  Heart,
   LayoutGrid,
   List,
   LogOut,
@@ -30,6 +31,7 @@ const PlotsMap = lazy(() => import('./pages/PlotsMap'));
 const LoginPage = lazy(() => import('./pages/LoginPage'));
 const MyPlots = lazy(() => import('./pages/MyPlots'));
 const ComparePlots = lazy(() => import('./pages/ComparePlots'));
+const Favorites = lazy(() => import('./pages/Favorites'));
 const NotFoundPage = lazy(() => import('./pages/NotFoundPage'));
 
 type NavItem = {
@@ -45,6 +47,8 @@ export default function App() {
   const { user, loading, logout, isAdmin } = useAuth();
   const compareCount = useUserPrefsStore((state) => state.comparePlotIds.length);
   const compareLabel = compareCount ? `Сравнение (${compareCount})` : 'Сравнение';
+  const favoriteCount = useUserPrefsStore((state) => state.favoritePlotIds.length);
+  const favoriteLabel = favoriteCount ? `Избранное (${favoriteCount})` : 'Избранное';
 
   const withRouteBoundary = (page: ReactNode) => (
     <ErrorBoundary fullScreen={false} title="Ошибка раздела">
@@ -89,6 +93,7 @@ export default function App() {
     { to: '/', label: 'Каталог', Icon: LayoutGrid, show: true, end: true },
     { to: '/map', label: 'Карта', Icon: Map, show: true },
     { to: '/compare', label: compareLabel, Icon: GitCompare, show: true },
+    { to: '/favorites', label: favoriteLabel, Icon: Heart, show: true },
     { to: '/add', label: 'Новый участок', Icon: PlusSquare, show: true },
     { to: '/my', label: 'Мои объявления', Icon: List, show: true },
     { to: '/admin', label: 'Панель данных', Icon: Database, show: isAdmin },
@@ -173,6 +178,7 @@ export default function App() {
               <Route path="/" element={withRouteBoundary(<PlotsList />)} />
               <Route path="/map" element={withRouteBoundary(<PlotsMap />)} />
               <Route path="/compare" element={withRouteBoundary(<ComparePlots />)} />
+              <Route path="/favorites" element={withRouteBoundary(<Favorites />)} />
               <Route path="/plots/:id" element={withRouteBoundary(<PlotDetail />)} />
               <Route path="/plots/:id/edit" element={withRouteBoundary(<EditPlot />)} />
               <Route path="/add" element={withRouteBoundary(<AddPlot />)} />

@@ -368,7 +368,7 @@ export default function AdminPanel() {
                       style={{ color: 'var(--c-red)', background: 'transparent' }}
                       title="Очистить коллекцию"
                     >
-                      <X size={20} />
+                      <X size={15} />
                     </Button>
                   </div>
                 </div>

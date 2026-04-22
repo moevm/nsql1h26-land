@@ -27,6 +27,10 @@ services:
       - MONGODB_URI=${MONGODB_URI:-mongodb://mongo:27017}
       - MONGODB_DB=${MONGODB_DB:-land_plots}
       - JINA_API_KEY=${JINA_API_KEY:-}
+      - JINA_EMBEDDINGS_MODEL=${JINA_EMBEDDINGS_MODEL:-jina-embeddings-v3}
+      - JINA_EMBEDDINGS_DIM=${JINA_EMBEDDINGS_DIM:-512}
+      - JINA_EMBEDDINGS_BATCH=${JINA_EMBEDDINGS_BATCH:-64}
+      - JINA_EMBEDDINGS_TASK=${JINA_EMBEDDINGS_TASK:-text-matching}
       - JWT_SECRET=${JWT_SECRET:-land-plots-dev-secret-key-change-in-prod}
       - PASSWORD_SALT=${PASSWORD_SALT:-}
       - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:3000,http://localhost:5173}
@@ -40,7 +44,6 @@ services:
     depends_on:
       - mongo
     volumes:
-      - model_cache:/home/appuser/.cache
       - ./data:/seed-data:ro
     restart: unless-stopped
 
@@ -55,4 +58,3 @@ services:
 
 volumes:
   mongo_data:
-  model_cache:

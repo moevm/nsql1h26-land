@@ -292,6 +292,7 @@ export function useUpdatePlotMutation(
     onSuccess: async (...args) => {
       await clearMapCache();
       await queryClient.invalidateQueries({ queryKey: plotsQueryKeys.detail(id) });
+      await queryClient.invalidateQueries({ queryKey: ['plots', 'price-history', id] });
       await queryClient.invalidateQueries({ queryKey: plotsQueryKeys.all });
       await queryClient.invalidateQueries({ queryKey: plotsQueryKeys.mapAll });
       if (options?.onSuccess) {
