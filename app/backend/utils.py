@@ -1,5 +1,4 @@
 import re
-from typing import Optional
 
 from bson import ObjectId
 from datetime import datetime
@@ -28,7 +27,7 @@ def serialize_doc_deep(doc: dict) -> dict:
     return doc
 
 
-def parse_area(title: str, description: str) -> Optional[float]:
+def parse_area(title: str, description: str) -> float | None:
     for text in [title, description]:
         m = re.search(r"(\d+[.,]?\d*)\s*сот", text, re.IGNORECASE)
         if m:

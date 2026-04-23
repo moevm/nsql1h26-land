@@ -16,7 +16,6 @@ import {
   fetchPlots,
   fetchPriceHistory,
   fetchSellerProfile,
-  sanitizePlotFilters,
   updatePlot,
   type MapDataset,
   type Plot,
@@ -24,8 +23,9 @@ import {
   type PlotFilters,
   type PlotUpdatePayload,
 } from '../../api';
+import { sanitizePlotFilters } from '../../lib/params';
 import { clearMapCache, readMapCache, writeMapCache } from '../../lib/mapCache';
-import { plotsQueryKeys } from './queryKeys';
+import { plotsQueryKeys, usersQueryKeys } from './queryKeys';
 
 type ListParams = {
   page: number;
@@ -239,7 +239,7 @@ export function useMapPlotsQuery({
 
 export function usePriceHistoryQuery(plotId: string) {
   return useQuery({
-    queryKey: ['plots', 'price-history', plotId],
+    queryKey: plotsQueryKeys.priceHistory(plotId),
     queryFn: ({ signal }) => fetchPriceHistory(plotId, signal),
     enabled: Boolean(plotId),
   });
@@ -247,7 +247,7 @@ export function usePriceHistoryQuery(plotId: string) {
 
 export function useLocationStatsQuery(location?: string) {
   return useQuery({
-    queryKey: ['plots', 'location-stats', location ?? ''],
+    queryKey: plotsQueryKeys.locationStats(location ?? ''),
     queryFn: ({ signal }) => fetchLocationStats(location ?? '', signal),
     enabled: Boolean(location && location.trim().length >= 2),
   });
@@ -255,7 +255,7 @@ export function useLocationStatsQuery(location?: string) {
 
 export function useSellerProfileQuery(username?: string) {
   return useQuery({
-    queryKey: ['users', 'seller-profile', username ?? ''],
+    queryKey: usersQueryKeys.sellerProfile(username ?? ''),
     queryFn: ({ signal }) => fetchSellerProfile(username ?? '', signal),
     enabled: Boolean(username && username.trim().length >= 3),
   });
@@ -265,6 +265,7 @@ export function useCreatePlotMutation(
   options?: UseMutationOptions<Plot, Error, PlotCreatePayload>,
 ) {
   const queryClient = useQueryClient();
+  const { onSuccess: callerOnSuccess, ...restOptions } = options ?? {};
 
   return useMutation({
     mutationFn: (payload) => createPlot(payload),
@@ -272,11 +273,11 @@ export function useCreatePlotMutation(
       await clearMapCache();
       await queryClient.invalidateQueries({ queryKey: plotsQueryKeys.all });
       await queryClient.invalidateQueries({ queryKey: plotsQueryKeys.mapAll });
-      if (options?.onSuccess) {
-        await options.onSuccess(...args);
+      if (callerOnSuccess) {
+        await callerOnSuccess(...args);
       }
     },
-    ...options,
+    ...restOptions,
   });
 }
 
@@ -285,6 +286,7 @@ export function useUpdatePlotMutation(
   options?: UseMutationOptions<Plot, Error, PlotUpdatePayload>,
 ) {
   const queryClient = useQueryClient();
+  const { onSuccess: callerOnSuccess, ...restOptions } = options ?? {};
 
   return useMutation({
     mutationFn: (payload) => updatePlot(id, payload),
@@ -292,7 +294,7 @@ export function useUpdatePlotMutation(
       const [plot] = args;
       queryClient.setQueryData(plotsQueryKeys.detail(id), plot);
       if (plot.price_history) {
-        queryClient.setQueryData(['plots', 'price-history', id], plot.price_history);
+        queryClient.setQueryData(plotsQueryKeys.priceHistory(id), plot.price_history);
       }
       await clearMapCache();
       await queryClient.invalidateQueries({
@@ -310,11 +312,11 @@ export function useUpdatePlotMutation(
           return true;
         },
       });
-      if (options?.onSuccess) {
-        await options.onSuccess(...args);
+      if (callerOnSuccess) {
+        await callerOnSuccess(...args);
       }
     },
-    ...options,
+    ...restOptions,
   });
 }
 
@@ -322,6 +324,7 @@ export function useDeletePlotMutation(
   options?: UseMutationOptions<void, Error, string>,
 ) {
   const queryClient = useQueryClient();
+  const { onSuccess: callerOnSuccess, ...restOptions } = options ?? {};
 
   return useMutation({
     mutationFn: (id) => deletePlot(id),
@@ -329,11 +332,11 @@ export function useDeletePlotMutation(
       await clearMapCache();
       await queryClient.invalidateQueries({ queryKey: plotsQueryKeys.all });
       await queryClient.invalidateQueries({ queryKey: plotsQueryKeys.mapAll });
-      if (options?.onSuccess) {
-        await options.onSuccess(...args);
+      if (callerOnSuccess) {
+        await callerOnSuccess(...args);
       }
     },
-    ...options,
+    ...restOptions,
   });
 }
 

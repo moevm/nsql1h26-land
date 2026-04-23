@@ -3,16 +3,13 @@ import { Link } from 'react-router-dom';
 import { useQueries } from '@tanstack/react-query';
 import { X } from 'lucide-react';
 
-import { ApiError, fetchPlot, type Plot } from '../api';
+import { fetchPlot, isMissingError, type Plot } from '../api';
+import { plotsQueryKeys } from '../features/plots/queryKeys';
 import { PageHeader } from '../components/PageHeader';
 import ScoreGauge from '../components/ScoreGauge';
 import { Button } from '../components/ui';
 import { formatPrice, formatPriceFull, getErrorMessage } from '../utils';
 import { useUserPrefsStore } from '../stores/userPrefsStore';
-
-function isMissingError(error: unknown): boolean {
-  return error instanceof ApiError && error.status === 404;
-}
 
 function toText(value: unknown): string {
   if (value === null || value === undefined || value === '') return '—';
@@ -27,7 +24,7 @@ export default function ComparePlots() {
 
   const queries = useQueries({
     queries: comparePlotIds.map((id) => ({
-      queryKey: ['plots', 'detail', id],
+      queryKey: plotsQueryKeys.detail(id),
       queryFn: ({ signal }: { signal: AbortSignal }) => fetchPlot(id, signal),
       retry: (_count: number, error: unknown) => !isMissingError(error),
     })),

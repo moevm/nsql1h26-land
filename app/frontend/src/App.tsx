@@ -12,7 +12,6 @@ import {
   Shield,
   User,
 } from 'lucide-react';
-import { IconMap2 } from '@tabler/icons-react';
 import { Link, NavLink, Route, Routes, useLocation } from 'react-router-dom';
 
 import ErrorBoundary from './components/ErrorBoundary';
@@ -107,7 +106,7 @@ export default function App() {
           <div className="flex items-center justify-between gap-2 min-h-16 py-2 flex-wrap">
             <Link to="/" className="flex items-center gap-3 no-underline shrink-0">
               <span className="app-brand-mark" aria-label="Земельные участки">
-                <IconMap2 size={22} stroke={1.75} />
+                <Map size={22} strokeWidth={1.75} />
               </span>
               <span
                 className="text-base sm:text-lg tracking-tight hidden sm:inline"

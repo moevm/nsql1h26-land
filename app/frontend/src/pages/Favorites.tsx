@@ -3,11 +3,9 @@ import { Link } from 'react-router-dom';
 import { useQueries } from '@tanstack/react-query';
 import { Heart } from 'lucide-react';
 
-import { ApiError, fetchPlot, type Plot } from '../api';
+import { fetchPlot, isMissingError, type Plot } from '../api';
+import { plotsQueryKeys } from '../features/plots/queryKeys';
 
-function isMissingError(error: unknown): boolean {
-  return error instanceof ApiError && error.status === 404;
-}
 import { PageHeader } from '../components/PageHeader';
 import ScoreGauge from '../components/ScoreGauge';
 import { Button, Surface } from '../components/ui';
@@ -20,7 +18,7 @@ export default function Favorites() {
 
   const queries = useQueries({
     queries: favoritePlotIds.map((id) => ({
-      queryKey: ['plots', 'detail', id],
+      queryKey: plotsQueryKeys.detail(id),
       queryFn: ({ signal }: { signal: AbortSignal }) => fetchPlot(id, signal),
       retry: (_count: number, error: unknown) => !isMissingError(error),
     })),

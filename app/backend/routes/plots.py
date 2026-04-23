@@ -1,6 +1,6 @@
 import statistics
 from datetime import datetime, timezone
-from typing import Annotated, Optional
+from typing import Annotated
 
 from bson import ObjectId
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -81,19 +81,19 @@ def _extract_existing_coords(existing: dict) -> tuple[float, float]:
 
 
 def _list_search_params(
-    q: Annotated[Optional[str], Query()] = None,
-    sort: Annotated[Optional[str], Query(pattern=SORT_PATTERN)] = None,
+    q: Annotated[str | None, Query()] = None,
+    sort: Annotated[str | None, Query(pattern=SORT_PATTERN)] = None,
     order: Annotated[str, Query(pattern=ORDER_PATTERN)] = "desc",
-    min_price: Annotated[Optional[float], Query(ge=0)] = None,
-    max_price: Annotated[Optional[float], Query(ge=0)] = None,
-    min_area: Annotated[Optional[float], Query(ge=0)] = None,
-    max_area: Annotated[Optional[float], Query(ge=0)] = None,
-    min_price_per_sotka: Annotated[Optional[float], Query(ge=0)] = None,
-    max_price_per_sotka: Annotated[Optional[float], Query(ge=0)] = None,
-    min_score: Annotated[Optional[float], Query(ge=0, le=1)] = None,
-    min_infra: Annotated[Optional[float], Query(ge=0, le=1)] = None,
-    min_feature: Annotated[Optional[float], Query(ge=0, le=1)] = None,
-    location: Annotated[Optional[str], Query()] = None,
+    min_price: Annotated[float | None, Query(ge=0)] = None,
+    max_price: Annotated[float | None, Query(ge=0)] = None,
+    min_area: Annotated[float | None, Query(ge=0)] = None,
+    max_area: Annotated[float | None, Query(ge=0)] = None,
+    min_price_per_sotka: Annotated[float | None, Query(ge=0)] = None,
+    max_price_per_sotka: Annotated[float | None, Query(ge=0)] = None,
+    min_score: Annotated[float | None, Query(ge=0, le=1)] = None,
+    min_infra: Annotated[float | None, Query(ge=0, le=1)] = None,
+    min_feature: Annotated[float | None, Query(ge=0, le=1)] = None,
+    location: Annotated[str | None, Query()] = None,
 ) -> dict:
     ranges_to_validate = [
         (min_price, max_price, "price"),

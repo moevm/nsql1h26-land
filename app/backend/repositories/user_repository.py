@@ -20,3 +20,6 @@ class UserRepository:
     async def insert_one(self, doc: dict) -> ObjectId:
         result = await self._col.insert_one(doc)
         return result.inserted_id
+
+    async def update_password(self, oid: ObjectId, pw_hash: str) -> None:
+        await self._col.update_one({"_id": oid}, {"$set": {"password_hash": pw_hash}})

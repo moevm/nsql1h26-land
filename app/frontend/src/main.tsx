@@ -1,4 +1,4 @@
-import React from 'react';
+import { StrictMode } from 'react';
 import ReactDOM from 'react-dom/client';
 import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client';
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
@@ -11,7 +11,7 @@ import { queryPersistOptions } from './lib/queryPersistence';
 import './index.css';
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
-  <React.StrictMode>
+  <StrictMode>
     <ErrorBoundary>
       <PersistQueryClientProvider client={queryClient} persistOptions={queryPersistOptions}>
         <BrowserRouter>
@@ -22,5 +22,5 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
         <ReactQueryDevtools initialIsOpen={false} />
       </PersistQueryClientProvider>
     </ErrorBoundary>
-  </React.StrictMode>,
+  </StrictMode>,
 );

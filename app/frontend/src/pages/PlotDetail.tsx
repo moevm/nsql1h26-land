@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { TrainFront, Hospital, School, Baby, ShoppingCart, Package, Bus, AlertTriangle, ArrowLeft, ExternalLink, Pencil, Heart, GitCompare } from 'lucide-react';
+import { ArrowLeft, ExternalLink, Pencil, Heart, GitCompare } from 'lucide-react';
 import { formatPriceFull, getErrorMessage } from '../utils';
 import { AlertMessage } from '../components/AlertMessage';
 import ScoreGauge from '../components/ScoreGauge';
@@ -14,16 +14,10 @@ import {
   useSellerProfileQuery,
 } from '../features/plots/hooks';
 import { useUserPrefsStore } from '../stores/userPrefsStore';
-import {
-  Line,
-  LineChart,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-} from 'recharts';
 import { Button, Surface } from '../components/ui';
+import PriceHistoryChart from '../components/PriceHistoryChart';
+import DistanceList from '../components/DistanceList';
+import SellerProfileCard from '../components/SellerProfileCard';
 
 const DATE_LABEL_OPTIONS: Intl.DateTimeFormatOptions = {
   day: 'numeric',
@@ -39,65 +33,15 @@ const DATE_TIME_OPTIONS: Intl.DateTimeFormatOptions = {
   minute: '2-digit',
 };
 
-const DISTANCE_ROW_CONFIG = [
-  { key: 'nearest_metro', icon: TrainFront, label: 'МЕТРО' },
-  { key: 'nearest_hospital', icon: Hospital, label: 'БОЛЬНИЦА' },
-  { key: 'nearest_school', icon: School, label: 'ШКОЛА' },
-  { key: 'nearest_kindergarten', icon: Baby, label: 'ДЕТСАД' },
-  { key: 'nearest_store', icon: ShoppingCart, label: 'МАГАЗИН' },
-  { key: 'nearest_pickup_point', icon: Package, label: 'ПВЗ' },
-  { key: 'nearest_bus_stop', icon: Bus, label: 'АВТОБУС' },
-  { key: 'nearest_negative', icon: AlertTriangle, label: 'НЕГАТИВ' },
-] as const;
-
 function formatDate(value: string | undefined, options: Intl.DateTimeFormatOptions): string | null {
-  if (!value) {
-    return null;
-  }
-
+  if (!value) return null;
   const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) {
-    return null;
-  }
-
+  if (Number.isNaN(parsed.getTime())) return null;
   return parsed.toLocaleDateString('ru-RU', options);
 }
 
-function distanceColor(km: number): string {
-  if (km < 5) return 'var(--c-green)';
-  if (km < 15) return 'var(--c-yellow)';
-  return 'var(--c-red)';
-}
-
-function DistanceRow({ icon: Icon, label, name, km }: { readonly icon: React.ElementType; readonly label: string; readonly name: string; readonly km: number }) {
-  const color = distanceColor(km);
-  return (
-    <div
-      className="flex items-center justify-between py-3 px-4 rounded-lg row-hover"
-      style={{ borderBottom: '1px solid var(--c-border)' }}
-    >
-      <div className="flex items-center gap-3">
-        <Icon size={18} style={{ color: 'var(--c-text-muted)', flexShrink: 0 }} />
-        <div>
-          <span className="text-xs uppercase tracking-wide" style={{ color: 'var(--c-text-dim)', fontFamily: 'var(--font-mono)' }}>{label}</span>
-          <p className="text-sm" style={{ color: 'var(--c-text)' }}>{name || '—'}</p>
-        </div>
-      </div>
-      <span
-        className="text-sm font-semibold tabular-nums"
-        style={{ color, fontFamily: 'var(--font-mono)' }}
-      >
-        {km.toFixed(1)} км
-      </span>
-    </div>
-  );
-}
-
 function MetaRow({ label, value }: { readonly label: string; readonly value: string | null }) {
-  if (!value) {
-    return null;
-  }
-
+  if (!value) return null;
   return (
     <p className="flex items-start gap-2">
       <span style={{ color: 'var(--c-text-dim)' }}>{label}:</span>
@@ -133,26 +77,6 @@ export default function PlotDetail() {
   const sellerProfileQuery = useSellerProfileQuery(plot?.owner_name);
   const sellerProfileError = sellerProfileQuery.error ? getErrorMessage(sellerProfileQuery.error) : '';
 
-  const priceHistoryData = (priceHistoryQuery.data ?? [])
-    .map((point) => ({
-      ts: new Date(point.at).getTime(),
-      price: point.price,
-    }))
-    .filter((point) => Number.isFinite(point.ts))
-    .sort((a, b) => a.ts - b.ts);
-
-  const formatHistoryTick = (value: number) =>
-    new Date(value).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' });
-
-  const formatHistoryLabel = (value: number) =>
-    new Date(value).toLocaleString('ru-RU', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
-
   const canEdit = plot && user && (isAdmin || plot.owner_id === user._id);
   const canDelete = canEdit;
 
@@ -170,12 +94,10 @@ export default function PlotDetail() {
   if (error) return <p className="text-center py-16" style={{ color: 'var(--c-red)' }} role="alert">{error}</p>;
   if (!plot) return <p className="text-center py-16" style={{ color: 'var(--c-text-dim)' }}>Не найдено</p>;
 
-  const d = plot.distances;
   const createdDateLabel = formatDate(plot.created_at, DATE_LABEL_OPTIONS);
   const updatedDateLabel = formatDate(plot.updated_at, DATE_LABEL_OPTIONS);
   const createdDateTime = formatDate(plot.created_at, DATE_TIME_OPTIONS);
   const updatedDateTime = formatDate(plot.updated_at, DATE_TIME_OPTIONS);
-  const sellerMemberSince = formatDate(sellerProfileQuery.data?.member_since, DATE_LABEL_OPTIONS);
 
   return (
     <div className="animate-fade-in-up max-w-5xl mx-auto">
@@ -303,59 +225,10 @@ export default function PlotDetail() {
             </div>
           </Surface>
 
-          <Surface className="p-5">
-            <SectionTitle className="mb-3">История цены</SectionTitle>
-            {priceHistoryQuery.isLoading && (
-              <p className="text-sm" style={{ color: 'var(--c-text-dim)' }}>Загрузка истории цены...</p>
-            )}
-            {!priceHistoryQuery.isLoading && priceHistoryData.length <= 1 && (
-              <p className="text-sm" style={{ color: 'var(--c-text-dim)' }}>Недостаточно данных для графика</p>
-            )}
-            {!priceHistoryQuery.isLoading && priceHistoryData.length > 1 && (
-              <div style={{ width: '100%', height: 220 }}>
-                <ResponsiveContainer>
-                  <LineChart data={priceHistoryData} margin={{ top: 8, right: 8, left: 8, bottom: 8 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="var(--c-border)" />
-                    <XAxis
-                      dataKey="ts"
-                      type="number"
-                      domain={['dataMin', 'dataMax']}
-                      scale="time"
-                      tickFormatter={formatHistoryTick}
-                      stroke="var(--c-text-dim)"
-                      fontSize={11}
-                    />
-                    <YAxis stroke="var(--c-text-dim)" fontSize={11} domain={['auto', 'auto']} />
-                    <Tooltip
-                      cursor={{ stroke: 'var(--c-border)' }}
-                      content={({ active, payload }) => {
-                        if (!active || !payload || payload.length === 0) return null;
-                        const point = payload[0].payload as { ts: number; price: number };
-                        return (
-                          <div
-                            style={{
-                              background: 'var(--c-surface)',
-                              border: '1px solid var(--c-border)',
-                              color: 'var(--c-text)',
-                              padding: '6px 10px',
-                              borderRadius: 6,
-                              fontSize: 12,
-                            }}
-                          >
-                            <div style={{ color: 'var(--c-text-dim)', marginBottom: 2 }}>
-                              {formatHistoryLabel(point.ts)}
-                            </div>
-                            <div>Цена: {formatPriceFull(point.price)}</div>
-                          </div>
-                        );
-                      }}
-                    />
-                    <Line type="monotone" dataKey="price" stroke="var(--c-accent)" strokeWidth={2} dot={{ r: 3 }} activeDot={{ r: 5 }} />
-                  </LineChart>
-                </ResponsiveContainer>
-              </div>
-            )}
-          </Surface>
+          <PriceHistoryChart
+            data={priceHistoryQuery.data ?? []}
+            isLoading={priceHistoryQuery.isLoading}
+          />
 
           <Surface className="p-5">
             <SectionTitle className="mb-3">Районная аналитика</SectionTitle>
@@ -434,57 +307,14 @@ export default function PlotDetail() {
             </div>
           </Surface>
 
-          {plot.distances && (
-            <Surface className="p-5">
-              <SectionTitle className="mb-3">Расстояния</SectionTitle>
-              <div className="space-y-0">
-                {DISTANCE_ROW_CONFIG.map((item) => {
-                  const distance = d?.[item.key];
-                  return (
-                    <DistanceRow
-                      key={item.key}
-                      icon={item.icon}
-                      label={item.label}
-                      name={distance?.name ?? ''}
-                      km={distance?.km ?? 0}
-                    />
-                  );
-                })}
-              </div>
-            </Surface>
-          )}
+          {plot.distances && <DistanceList distances={plot.distances} />}
 
-          <Surface className="p-5">
-            <SectionTitle className="mb-3">Продавец</SectionTitle>
-            {sellerProfileQuery.isLoading && (
-              <p className="text-sm" style={{ color: 'var(--c-text-dim)' }}>
-                Загружаем профиль продавца...
-              </p>
-            )}
-            {!sellerProfileQuery.isLoading && sellerProfileError && (
-              <p className="text-sm" style={{ color: 'var(--c-red)' }}>
-                {sellerProfileError}
-              </p>
-            )}
-            {!sellerProfileQuery.isLoading && !sellerProfileError && sellerProfileQuery.data && (
-              <div className="space-y-2 text-sm" style={{ color: 'var(--c-text)' }}>
-                <MetaRow label="Пользователь" value={sellerProfileQuery.data.username} />
-                <MetaRow label="Роль" value={sellerProfileQuery.data.role === 'admin' ? 'Администратор' : 'Пользователь'} />
-                <MetaRow label="Объявлений" value={String(sellerProfileQuery.data.plots_total)} />
-                <MetaRow label="Средний score" value={sellerProfileQuery.data.avg_total_score?.toFixed(3) ?? '—'} />
-                <MetaRow
-                  label="Средняя цена за сотку"
-                  value={sellerProfileQuery.data.avg_price_per_sotka ? formatPriceFull(sellerProfileQuery.data.avg_price_per_sotka) : '—'}
-                />
-                <MetaRow label="С нами с" value={sellerMemberSince ?? '—'} />
-              </div>
-            )}
-            {!sellerProfileQuery.isLoading && !sellerProfileError && !sellerProfileQuery.data && (
-              <p className="text-sm" style={{ color: 'var(--c-text-dim)' }}>
-                {plot.owner_name ? 'Профиль продавца недоступен' : 'Владелец не указан'}
-              </p>
-            )}
-          </Surface>
+          <SellerProfileCard
+            profile={sellerProfileQuery.data}
+            isLoading={sellerProfileQuery.isLoading}
+            error={sellerProfileError}
+            ownerName={plot.owner_name}
+          />
 
           <Surface
             className="p-5 text-xs"
@@ -494,11 +324,11 @@ export default function PlotDetail() {
             }}
           >
             <SectionTitle className="mb-3">Служебные данные</SectionTitle>
-              <div className="space-y-1.5">
-                <MetaRow
-                  label="Координаты"
-                  value={plot.lat !== undefined && plot.lon !== undefined ? `${plot.lat.toFixed(6)}, ${plot.lon.toFixed(6)}` : null}
-                />
+            <div className="space-y-1.5">
+              <MetaRow
+                label="Координаты"
+                value={plot.lat !== undefined && plot.lon !== undefined ? `${plot.lat.toFixed(6)}, ${plot.lon.toFixed(6)}` : null}
+              />
               <MetaRow label="AVITO ID" value={plot.avito_id ? String(plot.avito_id) : null} />
               <MetaRow label="OWNER" value={plot.owner_name || null} />
               <MetaRow label="Создано" value={createdDateTime} />

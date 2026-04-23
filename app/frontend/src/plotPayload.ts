@@ -7,7 +7,7 @@ export function buildPlotPayload(form: PlotFormState, lat: number, lon: number):
   return {
     title: form.title,
     description: form.description,
-    price: Number(form.price) || 0,
+    price: Number(form.price),
     area_sotki: form.area_sotki ? Number(form.area_sotki) : null,
     location: form.location,
     address: form.address,

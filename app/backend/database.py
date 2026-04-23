@@ -90,13 +90,18 @@ async def seed_admin():
         (SEED_USER_USERNAME, SEED_USER_PASSWORD, "user"),
     ]
     for username, password, role in defaults:
+        pw_hash = hash_password(password)
         existing = await repo.find_by_username(username)
         if existing:
-            logger.info("User '%s' already exists, skipping seed", username)
+            if existing.get("password_hash") != pw_hash:
+                await repo.update_password(existing["_id"], pw_hash)
+                logger.info("Updated password for '%s'", username)
+            else:
+                logger.info("User '%s' already exists, skipping seed", username)
             continue
         await repo.insert_one({
             "username": username,
-            "password_hash": hash_password(password),
+            "password_hash": pw_hash,
             "role": role,
             "created_at": datetime.now(timezone.utc),
         })

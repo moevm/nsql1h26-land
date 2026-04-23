@@ -624,6 +624,14 @@ textarea.input-field {
   resize: vertical;
 }
 
+@utility text-dim { color: var(--c-text-dim); }
+@utility text-muted { color: var(--c-text-muted); }
+@utility text-heading { color: var(--c-heading); }
+@utility text-accent { color: var(--c-accent); }
+@utility font-mono { font-family: var(--font-mono); }
+@utility font-display { font-family: var(--font-display); }
+@utility font-body { font-family: var(--font-body); }
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
