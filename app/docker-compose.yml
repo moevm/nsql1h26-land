@@ -4,6 +4,8 @@ services:
     container_name: ${MONGO_CONTAINER_NAME:-land-plots-mongo}
     volumes:
       - mongo_data:/data/db
+      - ./dump:/dump:ro
+      - ./mongo-init/restore.sh:/docker-entrypoint-initdb.d/restore.sh:ro
     restart: unless-stopped
 
   mongo-express:
