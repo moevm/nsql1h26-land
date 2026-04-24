@@ -42,6 +42,12 @@ docker-compose up --build
 - Mongo Express: http://localhost:8081
 - MongoDB: `localhost:27017`
 
+Также созданы тестовые пользователи
+админ: 
+  логин : admin пароль: admin
+обычный пользователь
+  логин: user пароль: user
+
 Локальный запуск без Docker (нужен запущенный MongoDB):
 
 ```bash
