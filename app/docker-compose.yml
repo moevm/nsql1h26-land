@@ -1,5 +1,5 @@
 services:
-  mongo:
+  db:
     image: ${MONGO_IMAGE:-mongo:7}
     container_name: ${MONGO_CONTAINER_NAME:-land-plots-mongo}
     volumes:
@@ -44,7 +44,7 @@ services:
       - SEED_INFRA_FILE=${SEED_INFRA_FILE:-infrastructure.json}
       - SEED_PLOTS_FILE=${SEED_PLOTS_FILE:-enriched_cache.json}
     depends_on:
-      - mongo
+      - db
     volumes:
       - ./data:/seed-data:ro
     restart: unless-stopped
