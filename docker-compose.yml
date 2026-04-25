@@ -4,8 +4,8 @@ services:
     container_name: ${MONGO_CONTAINER_NAME:-land-plots-mongo}
     volumes:
       - mongo_data:/data/db
-      - ./dump:/dump:ro
-      - ./mongo-init/restore.sh:/docker-entrypoint-initdb.d/restore.sh:ro
+      - ./app/dump:/dump:ro
+      - ./app/mongo-init/restore.sh:/docker-entrypoint-initdb.d/restore.sh:ro
     restart: unless-stopped
 
   mongo-express:
@@ -14,19 +14,19 @@ services:
     ports:
       - "127.0.0.1:${MONGO_EXPRESS_PORT:-8081}:8081"
     environment:
-      - ME_CONFIG_MONGODB_URL=${MONGO_EXPRESS_MONGODB_URL:-mongodb://mongo:27017}
+      - ME_CONFIG_MONGODB_URL=${MONGO_EXPRESS_MONGODB_URL:-mongodb://db:27017}
       - ME_CONFIG_BASICAUTH=${MONGO_EXPRESS_BASICAUTH:-false}
     depends_on:
-      - mongo
+      - db
     restart: unless-stopped
 
   backend:
-    build: ./backend
+    build: ./app/backend
     container_name: ${BACKEND_CONTAINER_NAME:-land-plots-backend}
     ports:
       - "127.0.0.1:${BACKEND_PORT:-8000}:8000"
     environment:
-      - MONGODB_URI=${MONGODB_URI:-mongodb://mongo:27017}
+      - MONGODB_URI=${MONGODB_URI:-mongodb://db:27017}
       - MONGODB_DB=${MONGODB_DB:-land_plots}
       - JINA_API_KEY=${JINA_API_KEY:-}
       - JINA_EMBEDDINGS_MODEL=${JINA_EMBEDDINGS_MODEL:-jina-embeddings-v3}
@@ -46,11 +46,11 @@ services:
     depends_on:
       - db
     volumes:
-      - ./data:/seed-data:ro
+      - ./app/data:/seed-data:ro
     restart: unless-stopped
 
   frontend:
-    build: ./frontend
+    build: ./app/frontend
     container_name: ${FRONTEND_CONTAINER_NAME:-land-plots-frontend}
     ports:
       - "127.0.0.1:${FRONTEND_PORT:-3000}:8080"
@@ -60,4 +60,3 @@ services:
 
 volumes:
   mongo_data:
-
