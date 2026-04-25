@@ -1,11 +1,11 @@
 services:
   db:
-    image: ${MONGO_IMAGE:-mongo:7}
+    build:
+      context: ./app
+      dockerfile: db/Dockerfile
     container_name: ${MONGO_CONTAINER_NAME:-land-plots-mongo}
     volumes:
       - mongo_data:/data/db
-      - ./app/dump:/dump:ro
-      - ./app/mongo-init/restore.sh:/docker-entrypoint-initdb.d/restore.sh:ro
     restart: unless-stopped
 
   mongo-express:
