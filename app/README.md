@@ -34,6 +34,7 @@
 ```bash
 cd app
 cp .env.example .env   # при необходимости отредактировать JINA_API_KEY, JWT_SECRET
+cd ..
 docker-compose up --build
 ```
 
