@@ -44,9 +44,10 @@ docker-compose up --build
 - MongoDB: `localhost:27017`
 
 Также созданы тестовые пользователи
-админ: 
+1)админ: 
   логин : admin пароль: admin
-обычный пользователь
+  
+2)обычный пользователь
   логин: user пароль: user
 
 Локальный запуск без Docker (нужен запущенный MongoDB):
@@ -65,5 +66,3 @@ cd app/frontend
 npm install
 npm run dev
 ```
-
-Учётные данные по умолчанию: `admin / admin`, `user / user`.
