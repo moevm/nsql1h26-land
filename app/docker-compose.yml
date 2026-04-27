@@ -6,6 +6,14 @@ services:
       - mongo_data:/data/db
       - ./dump:/dump:ro
       - ./mongo-init/restore.sh:/docker-entrypoint-initdb.d/restore.sh:ro
+      - ./db/mongod.conf:/etc/mongod.conf:ro
+    command: ["--config", "/etc/mongod.conf"]
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping')"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+      start_period: 5s
     restart: unless-stopped
 
   mongo-express:
@@ -17,7 +25,8 @@ services:
       - ME_CONFIG_MONGODB_URL=${MONGO_EXPRESS_MONGODB_URL:-mongodb://mongo:27017}
       - ME_CONFIG_BASICAUTH=${MONGO_EXPRESS_BASICAUTH:-false}
     depends_on:
-      - mongo
+      mongo:
+        condition: service_healthy
     restart: unless-stopped
 
   backend:
@@ -44,7 +53,8 @@ services:
       - SEED_INFRA_FILE=${SEED_INFRA_FILE:-infrastructure.json}
       - SEED_PLOTS_FILE=${SEED_PLOTS_FILE:-enriched_cache.json}
     depends_on:
-      - mongo
+      mongo:
+        condition: service_healthy
     volumes:
       - ./data:/seed-data:ro
     restart: unless-stopped
