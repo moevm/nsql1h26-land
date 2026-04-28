@@ -28,7 +28,7 @@ from services.listing_service import (
     normalize_sort,
 )
 from services.search_service import invalidate_search_cache, search_plots
-from auth import get_current_user, get_optional_user
+from auth import get_current_user
 from utils import serialize_doc as _serialize, parse_area as _parse_area
 
 router = APIRouter(prefix="/api/plots", tags=["plots"])
@@ -365,7 +365,7 @@ async def get_plot(plot_id: str):
 
 
 @router.post("", response_model=PlotOut, status_code=201)
-async def create_plot(data: PlotCreate, user: Annotated[dict | None, Depends(get_optional_user)]):
+async def create_plot(data: PlotCreate, user: Annotated[dict, Depends(get_current_user)]):
     db = get_db()
     repo = get_plot_repo()
 
@@ -407,8 +407,8 @@ async def create_plot(data: PlotCreate, user: Annotated[dict | None, Depends(get
         "total_score": total_score,
         "created_at": datetime.now(timezone.utc),
         "price_history": [_make_price_history_entry(data.price)] if data.price is not None else [],
-        "owner_id": user["_id"] if user else None,
-        "owner_name": user["username"] if user else None,
+        "owner_id": user["_id"],
+        "owner_name": user["username"],
     }
 
     result_id = await repo.insert_one(doc)

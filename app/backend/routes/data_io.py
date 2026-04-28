@@ -163,7 +163,7 @@ def _build_plot_doc(rec: dict, feat: dict[str, Any], geo_data: dict, lat: float,
     }
 
 @router.get("/export")
-async def export_all():
+async def export_all(_: Annotated[dict, Depends(require_admin)]):
     plot_repo = get_plot_repo()
     infra_repo = get_infra_repo()
     result = {}
@@ -179,7 +179,10 @@ async def export_all():
     "/export/{collection}",
     responses={400: {"description": "Unknown collection"}},
 )
-async def export_collection(collection: str):
+async def export_collection(
+    collection: str,
+    _: Annotated[dict, Depends(require_admin)],
+):
     if collection not in ALL_COLLECTIONS:
         raise HTTPException(400, f"Unknown collection: {collection}")
     if collection == COL_PLOTS:
