@@ -9,10 +9,10 @@ import { SectionTitle } from '../components/SectionTitle';
 import { Button, Surface } from '../components/ui';
 import { cn } from '../lib/cn';
 import {
-  extractPlotsArray,
   formatZodError,
   infraImportPayloadSchema,
   plotsImportPayloadSchema,
+  splitCombinedImport,
 } from '../features/forms/importSchemas';
 
 export default function AdminPanel() {
@@ -22,9 +22,7 @@ export default function AdminPanel() {
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const fileInput = useRef<HTMLInputElement>(null);
-  const infraFileInput = useRef<HTMLInputElement>(null);
-  const [plotsFileName, setPlotsFileName] = useState('');
-  const [infraFileName, setInfraFileName] = useState('');
+  const [importFileName, setImportFileName] = useState('');
 
   async function loadStats() {
     try {
@@ -93,7 +91,7 @@ export default function AdminPanel() {
   async function handleImport() {
     const file = fileInput.current?.files?.[0];
     if (!file) {
-      showErr('Выберите JSON-файл');
+      showErr('Выберите файл infra_and_plots.json');
       return;
     }
     setLoading(true);
@@ -106,59 +104,49 @@ export default function AdminPanel() {
         throw new Error('Файл не является валидным JSON');
       }
 
-      const rawRecords = extractPlotsArray(json);
-      const parsed = plotsImportPayloadSchema.safeParse(rawRecords);
-      if (!parsed.success) {
-        throw new Error(formatZodError(parsed.error));
+      const { plots, infra } = splitCombinedImport(json);
+      const messages: string[] = [];
+
+      const ALL_INFRA = [
+        'metro_stations', 'hospitals', 'schools', 'kindergartens',
+        'stores', 'pickup_points', 'bus_stops', 'negative_objects',
+      ];
+      await clearCollection('plots').catch(() => undefined);
+      await Promise.all(
+        ALL_INFRA.map((col) => clearCollection(col).catch(() => undefined)),
+      );
+
+      if (Object.keys(infra).length > 0) {
+        const parsedInfra = infraImportPayloadSchema.safeParse(infra);
+        if (!parsedInfra.success) {
+          throw new Error(formatZodError(parsedInfra.error));
+        }
+        let totalReplaced = 0;
+        const collections = Object.keys(parsedInfra.data);
+        for (const col of collections) {
+          const result = await importInfra(col, toRecordArray(parsedInfra.data[col]));
+          totalReplaced += result.replaced;
+        }
+        messages.push(`инфраструктура: ${totalReplaced} объектов в ${collections.length} коллекциях`);
       }
 
-      const result = await importPlots(toRecordArray(parsed.data as unknown[]));
-      showMsg(`Импортировано: ${result.inserted} объявлений`);
+      if (plots.length > 0) {
+        const parsedPlots = plotsImportPayloadSchema.safeParse(plots);
+        if (!parsedPlots.success) {
+          throw new Error(formatZodError(parsedPlots.error));
+        }
+        const result = await importPlots(toRecordArray(parsedPlots.data as unknown[]));
+        messages.push(`объявления: ${result.inserted}`);
+      }
+
+      showMsg(`Импорт завершён — ${messages.join('; ')}`);
       loadStats();
     } catch (e) {
       showErr(getErrorMessage(e));
     } finally {
       setLoading(false);
       if (fileInput.current) fileInput.current.value = '';
-      setPlotsFileName('');
-    }
-  }
-
-  async function handleImportInfra() {
-    const file = infraFileInput.current?.files?.[0];
-    if (!file) {
-      showErr('Выберите JSON-файл с инфраструктурой');
-      return;
-    }
-    setLoading(true);
-    try {
-      const text = await file.text();
-      let json: unknown;
-      try {
-        json = JSON.parse(text);
-      } catch {
-        throw new Error('Файл не является валидным JSON');
-      }
-      const parsed = infraImportPayloadSchema.safeParse(json);
-      if (!parsed.success) {
-        throw new Error(formatZodError(parsed.error));
-      }
-
-      let totalReplaced = 0;
-      const collections = Object.keys(parsed.data);
-      for (const col of collections) {
-        const items = parsed.data[col];
-        const result = await importInfra(col, toRecordArray(items));
-        totalReplaced += result.replaced;
-      }
-      showMsg(`Импорт инфраструктуры: заменено ${totalReplaced} объектов (${collections.length} коллекций)`);
-      loadStats();
-    } catch (e) {
-      showErr(getErrorMessage(e));
-    } finally {
-      setLoading(false);
-      if (infraFileInput.current) infraFileInput.current.value = '';
-      setInfraFileName('');
+      setImportFileName('');
     }
   }
 
@@ -218,24 +206,24 @@ export default function AdminPanel() {
 
         <Surface className="p-4" style={{ background: 'var(--c-surface)' }}>
           <p className="text-xs uppercase tracking-wide mb-3" style={{ color: 'var(--c-text-dim)', fontFamily: 'var(--font-mono)' }}>
-            Импорт объявлений
+            Импорт объявлений и инфраструктуры
           </p>
           <div className="flex gap-3 items-center">
             <label
-              className={cn('file-input flex-1', plotsFileName && 'file-input--selected')}
+              className={cn('file-input flex-1', importFileName && 'file-input--selected')}
             >
               <input
                 ref={fileInput}
                 type="file"
                 accept=".json"
-                onChange={(e) => setPlotsFileName(e.target.files?.[0]?.name ?? '')}
+                onChange={(e) => setImportFileName(e.target.files?.[0]?.name ?? '')}
               />
               <span className="file-input-btn">
                 <Upload size={13} />
                 Выберите файл
               </span>
               <span className="file-input-name">
-                {plotsFileName || 'Файл не выбран'}
+                {importFileName || 'infra_and_plots.json'}
               </span>
             </label>
             <Button
@@ -253,50 +241,9 @@ export default function AdminPanel() {
             </Button>
           </div>
           <p className="text-xs mt-3" style={{ color: 'var(--c-text-dim)' }}>
-            Поддержка: массив объявлений, объект с ключом «plots» или «data».
-            Если фичи уже рассчитаны — повторный расчёт не производится.
-          </p>
-        </Surface>
-
-        <Surface className="p-4 mt-4" style={{ background: 'var(--c-surface)' }}>
-          <p className="text-xs uppercase tracking-wide mb-3" style={{ color: 'var(--c-text-dim)', fontFamily: 'var(--font-mono)' }}>
-            Импорт инфраструктуры
-          </p>
-          <div className="flex gap-3 items-center">
-            <label
-              className={cn('file-input flex-1', infraFileName && 'file-input--selected')}
-            >
-              <input
-                ref={infraFileInput}
-                type="file"
-                accept=".json"
-                onChange={(e) => setInfraFileName(e.target.files?.[0]?.name ?? '')}
-              />
-              <span className="file-input-btn">
-                <Upload size={13} />
-                Выберите файл
-              </span>
-              <span className="file-input-name">
-                {infraFileName || 'Файл не выбран'}
-              </span>
-            </label>
-            <Button
-              onClick={handleImportInfra}
-              disabled={loading}
-              variant="ghost"
-              size="sm"
-              className="whitespace-nowrap"
-              style={{
-                borderColor: 'var(--c-blue)',
-                color: 'var(--c-blue)',
-              }}
-            >
-              {loading ? '...' : <><Upload size={14} className="inline-block mr-1" />Импорт</>}
-            </Button>
-          </div>
-          <p className="text-xs mt-3" style={{ color: 'var(--c-text-dim)' }}>
-            JSON с ключами-коллекциями: metro_stations, hospitals, schools и т.д.
-            Каждая коллекция полностью заменяется.
+            Один JSON-файл infra_and_plots.json: объект с ключом «plots» (массив объявлений)
+            и/или ключами коллекций инфраструктуры (metro_stations, hospitals и т.д.).
+            Перед импортом все объявления и инфраструктура полностью удаляются.
           </p>
         </Surface>
       </Surface>

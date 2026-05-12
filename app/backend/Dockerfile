@@ -23,6 +23,9 @@ RUN useradd --create-home --shell /bin/bash appuser
 COPY --from=builder /opt/venv /opt/venv
 COPY --chown=appuser:appuser . .
 
+RUN mkdir -p /app/uploads && chown -R appuser:appuser /app/uploads
+VOLUME ["/app/uploads"]
+
 USER appuser
 
 EXPOSE 8000

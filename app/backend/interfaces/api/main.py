@@ -1,9 +1,12 @@
 import logging
+import os
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 
 from domain.exceptions import (
     ConflictError,
@@ -68,12 +71,18 @@ from interfaces.api.routes.plots import router as plots_router
 from interfaces.api.routes.infrastructure import router as infra_router
 from interfaces.api.routes.data_io import router as data_io_router
 from interfaces.api.routes.users import router as users_router
+from interfaces.api.routes.uploads import router as uploads_router
 
 app.include_router(auth_router)
 app.include_router(plots_router)
 app.include_router(infra_router)
 app.include_router(data_io_router)
 app.include_router(users_router)
+app.include_router(uploads_router)
+
+_upload_dir = Path(os.getenv("UPLOAD_DIR", "/app/uploads"))
+_upload_dir.mkdir(parents=True, exist_ok=True)
+app.mount("/uploads", StaticFiles(directory=str(_upload_dir)), name="uploads")
 
 
 @app.get("/api/health")

@@ -4,7 +4,7 @@ import { SectionTitle } from './SectionTitle';
 import { Surface } from './ui';
 
 const DISTANCE_ROW_CONFIG = [
-  { key: 'nearest_metro', icon: TrainFront, label: 'МЕТРО' },
+  { key: 'nearest_metro', icon: TrainFront, label: 'МЕТРО', maxKm: 50 },
   { key: 'nearest_hospital', icon: Hospital, label: 'БОЛЬНИЦА' },
   { key: 'nearest_school', icon: School, label: 'ШКОЛА' },
   { key: 'nearest_kindergarten', icon: Baby, label: 'ДЕТСАД' },
@@ -20,8 +20,8 @@ function distanceColor(km: number): string {
   return 'var(--c-red)';
 }
 
-function DistanceRow({ icon: Icon, label, name, km }: { readonly icon: React.ElementType; readonly label: string; readonly name: string; readonly km: number }) {
-  const color = distanceColor(km);
+function DistanceRow({ icon: Icon, label, name, km, hidden }: { readonly icon: React.ElementType; readonly label: string; readonly name: string; readonly km: number; readonly hidden?: boolean }) {
+  const color = hidden ? 'var(--c-text-dim)' : distanceColor(km);
   return (
     <div
       className="flex items-center justify-between py-3 px-4 rounded-lg row-hover"
@@ -31,14 +31,14 @@ function DistanceRow({ icon: Icon, label, name, km }: { readonly icon: React.Ele
         <Icon size={18} style={{ color: 'var(--c-text-muted)', flexShrink: 0 }} />
         <div>
           <span className="text-xs uppercase tracking-wide" style={{ color: 'var(--c-text-dim)', fontFamily: 'var(--font-mono)' }}>{label}</span>
-          <p className="text-sm" style={{ color: 'var(--c-text)' }}>{name || '—'}</p>
+          <p className="text-sm" style={{ color: 'var(--c-text)' }}>{hidden ? '—' : (name || '—')}</p>
         </div>
       </div>
       <span
         className="text-sm font-semibold tabular-nums"
         style={{ color, fontFamily: 'var(--font-mono)' }}
       >
-        {km.toFixed(1)} км
+        {hidden ? '—' : `${km.toFixed(1)} км`}
       </span>
     </div>
   );
@@ -51,13 +51,17 @@ export default function DistanceList({ distances }: { readonly distances: PlotDi
       <div className="space-y-0">
         {DISTANCE_ROW_CONFIG.map((item) => {
           const distance = distances[item.key];
+          const km = distance?.km ?? 0;
+          const maxKm = 'maxKm' in item ? item.maxKm : undefined;
+          const hidden = maxKm !== undefined && km > maxKm;
           return (
             <DistanceRow
               key={item.key}
               icon={item.icon}
               label={item.label}
               name={distance?.name ?? ''}
-              km={distance?.km ?? 0}
+              km={km}
+              hidden={hidden}
             />
           );
         })}

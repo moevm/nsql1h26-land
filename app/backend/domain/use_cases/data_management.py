@@ -101,7 +101,6 @@ class ImportPlotsUseCase:
             return 0
 
         feat_map = self._build_feature_map(records, self._feature_keys)
-        feat_map = self._build_feature_map(records, feature_keys)
 
         inserted = 0
         uow = self._uow_factory()

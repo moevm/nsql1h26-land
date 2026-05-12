@@ -424,3 +424,12 @@ export async function importInfra(collection: string, records: Array<Record<stri
     body: JSON.stringify(records),
   });
 }
+
+export async function uploadImage(file: File): Promise<{ url: string }> {
+  const form = new FormData();
+  form.append('file', file);
+  return fetchJson(`${API_BASE}/uploads/image`, {
+    method: 'POST',
+    body: form,
+  });
+}
