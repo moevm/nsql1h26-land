@@ -34,6 +34,7 @@
 ```bash
 cd app
 cp .env.example .env   # при необходимости отредактировать JINA_API_KEY, JWT_SECRET
+cd ..
 docker-compose up --build
 ```
 
@@ -42,11 +43,17 @@ docker-compose up --build
 - Mongo Express: http://localhost:8081
 - MongoDB: `localhost:27017`
 
-Также созданы тестовые пользователи
-админ: 
-  логин : admin пароль: admin
-обычный пользователь
-  логин: user пароль: user
+Также созданы тестовые пользователи:
+
+# 1)админ
+
+  логин : admin
+  пароль: admin
+  
+# 2)обычный пользователь
+
+  логин: user
+  пароль: user
 
 Локальный запуск без Docker (нужен запущенный MongoDB):
 
@@ -64,5 +71,3 @@ cd app/frontend
 npm install
 npm run dev
 ```
-
-Учётные данные по умолчанию: `admin / admin`, `user / user`.
