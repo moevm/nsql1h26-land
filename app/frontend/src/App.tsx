@@ -1,7 +1,6 @@
 import { lazy, Suspense, type ComponentType, type ReactNode } from 'react';
 import { AnimatePresence } from 'framer-motion';
 import {
-  BarChart3,
   Database,
   GitCompare,
   Heart,
@@ -32,7 +31,6 @@ const LoginPage = lazy(() => import('./pages/LoginPage'));
 const MyPlots = lazy(() => import('./pages/MyPlots'));
 const ComparePlots = lazy(() => import('./pages/ComparePlots'));
 const Favorites = lazy(() => import('./pages/Favorites'));
-const Statistics = lazy(() => import('./pages/Statistics'));
 const NotFoundPage = lazy(() => import('./pages/NotFoundPage'));
 
 type NavItem = {
@@ -94,7 +92,6 @@ export default function App() {
     { to: '/favorites', label: favoriteLabel, Icon: Heart, show: true },
     { to: '/add', label: 'Новый участок', Icon: PlusSquare, show: true },
     { to: '/my', label: 'Мои объявления', Icon: List, show: true },
-    { to: '/stats', label: 'Статистика', Icon: BarChart3, show: true },
     { to: '/admin', label: 'Панель данных', Icon: Database, show: isAdmin },
   ];
 
@@ -105,8 +102,8 @@ export default function App() {
       </a>
 
       <header className="app-header sticky top-0 z-50 backdrop-blur-xl">
-        <div className="w-full px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-center gap-4 min-h-16 py-2 flex-wrap">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-10">
+          <div className="flex items-center justify-between gap-2 min-h-16 py-2 flex-wrap">
             <Link to="/" className="flex items-center gap-3 no-underline shrink-0">
               <span className="app-brand-mark" aria-label="Земельные участки">
                 <Map size={22} strokeWidth={1.75} />
@@ -123,8 +120,8 @@ export default function App() {
               </span>
             </Link>
 
-            <div className="flex items-center gap-2 flex-wrap justify-center">
-              <nav className="flex items-center gap-1 flex-wrap justify-center" aria-label="Основная навигация">
+            <div className="flex items-center gap-2 min-w-0 flex-1 justify-end flex-wrap">
+              <nav className="flex items-center gap-1 flex-wrap justify-end" aria-label="Основная навигация">
                 {navLinks
                   .filter((item) => item.show)
                   .map((item) => (
@@ -132,7 +129,7 @@ export default function App() {
                       key={item.to}
                       to={item.to}
                       end={item.end}
-                      className={({ isActive }) => cn('app-nav-link shrink-0 whitespace-nowrap', isActive && 'active')}
+                      className={({ isActive }) => cn('app-nav-link', isActive && 'active')}
                     >
                       <item.Icon size={15} className="opacity-75" />
                       <span>{item.label}</span>
@@ -182,7 +179,6 @@ export default function App() {
               <Route path="/plots/:id/edit" element={withRouteBoundary(<EditPlot />)} />
               <Route path="/add" element={withRouteBoundary(<AddPlot />)} />
               <Route path="/my" element={withRouteBoundary(<MyPlots />)} />
-              <Route path="/stats" element={withRouteBoundary(<Statistics />)} />
               <Route path="/admin" element={withRouteBoundary(<AdminPanel />)} />
               <Route path="*" element={withRouteBoundary(<NotFoundPage />)} />
             </Routes>

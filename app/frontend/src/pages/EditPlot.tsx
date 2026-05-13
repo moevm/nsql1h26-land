@@ -1,9 +1,8 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { Upload } from 'lucide-react';
-import { type Plot, uploadImage } from '../api';
+import { type Plot } from '../api';
 import { SPB_CENTER, getErrorMessage, formatPrice } from '../utils';
 import { useAuth } from '../contexts/AuthContext';
 import { buildPlotPayload, type PlotFormState } from '../plotPayload';
@@ -41,7 +40,6 @@ export default function EditPlot() {
     handleSubmit,
     reset,
     watch,
-    setValue,
     formState: { errors },
   } = useForm<PlotFormState>({
     resolver: zodResolver(plotFormSchema),
@@ -49,25 +47,6 @@ export default function EditPlot() {
   });
   const [lat, setLat] = useState(SPB_CENTER[0]);
   const [lon, setLon] = useState(SPB_CENTER[1]);
-  const [uploading, setUploading] = useState(false);
-  const imgInput = useRef<HTMLInputElement>(null);
-  const thumbnailValue = watch('thumbnail');
-
-  async function handleImageUpload(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setError('');
-    setUploading(true);
-    try {
-      const { url } = await uploadImage(file);
-      setValue('thumbnail', url, { shouldValidate: true, shouldDirty: true });
-    } catch (err) {
-      setError(getErrorMessage(err));
-    } finally {
-      setUploading(false);
-      if (imgInput.current) imgInput.current.value = '';
-    }
-  }
 
   const priceValue = watch('price');
   const areaValue = watch('area_sotki');
@@ -147,7 +126,7 @@ export default function EditPlot() {
           <div className="grid grid-cols-2 gap-4">
             <div>
               <FieldLabel htmlFor="edit-price">Цена (₽) *</FieldLabel>
-              <Input id="edit-price" type="number" min="0" max="10000000000" placeholder="1 500 000" {...register('price')} />
+              <Input id="edit-price" type="number" step="10000" min="0" placeholder="1 500 000" {...register('price')} />
               <FieldError message={errors.price?.message} />
               {priceValue && Number(priceValue) > 0 && (
                 <p className="text-xs mt-1" style={{ color: 'var(--c-accent)', fontFamily: 'var(--font-mono)' }}>{formatPrice(Number(priceValue))}</p>
@@ -155,7 +134,7 @@ export default function EditPlot() {
             </div>
             <div>
               <FieldLabel htmlFor="edit-area">Площадь (сотки) *</FieldLabel>
-              <Input id="edit-area" type="number" min="0" max="100000" placeholder="10" {...register('area_sotki')} />
+              <Input id="edit-area" type="number" step="0.5" min="0" placeholder="10" {...register('area_sotki')} />
               <FieldError message={errors.area_sotki?.message} />
               {priceValue && areaValue && Number(areaValue) > 0 && (
                 <p className="text-xs mt-1" style={{ color: 'var(--c-text-muted)', fontFamily: 'var(--font-mono)' }}>≈ {formatPrice(Number(priceValue) / Number(areaValue))}/сот.</p>
@@ -175,7 +154,7 @@ export default function EditPlot() {
             </div>
           </div>
           <div>
-            <FieldLabel htmlFor="edit-geo-ref">Гео-описание</FieldLabel>
+            <FieldLabel htmlFor="edit-geo-ref">Гео-описание *</FieldLabel>
             <Input id="edit-geo-ref" {...register('geo_ref')} />
             <FieldError message={errors.geo_ref?.message} />
           </div>
@@ -186,34 +165,8 @@ export default function EditPlot() {
               <FieldError message={errors.url?.message} />
             </div>
             <div>
-              <FieldLabel htmlFor="edit-thumbnail">Изображение</FieldLabel>
-              <Input id="edit-thumbnail" {...register('thumbnail')} placeholder="URL или загрузите файл" />
-              <div className="flex items-center gap-2 mt-2">
-                <input
-                  ref={imgInput}
-                  type="file"
-                  accept="image/*"
-                  className="hidden"
-                  onChange={handleImageUpload}
-                />
-                <Button
-                  type="button"
-                  onClick={() => imgInput.current?.click()}
-                  disabled={uploading}
-                  variant="ghost"
-                  size="sm"
-                >
-                  <Upload size={13} className="inline-block mr-1" />
-                  {uploading ? 'Загрузка...' : 'Загрузить файл'}
-                </Button>
-                {thumbnailValue && (
-                  <img
-                    src={thumbnailValue}
-                    alt=""
-                    className="h-10 w-10 object-cover rounded"
-                  />
-                )}
-              </div>
+              <FieldLabel htmlFor="edit-thumbnail">URL изображения</FieldLabel>
+              <Input id="edit-thumbnail" {...register('thumbnail')} />
               <FieldError message={errors.thumbnail?.message} />
             </div>
           </div>
