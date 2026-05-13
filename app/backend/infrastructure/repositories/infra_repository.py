@@ -17,9 +17,13 @@ class MotorInfraRepository(InfraRepositoryInterface):
         return get_settings().infra_slug_to_type.get(slug_or_type, slug_or_type)
 
     def _doc_to_infra(self, doc: dict) -> InfraObject:
+        coords = (doc.get("location") or {}).get("coordinates") or [0, 0]
+        lon, lat = (coords[0], coords[1]) if len(coords) >= 2 else (0, 0)
         return InfraObject(
             id=str(doc["_id"]),
             name=doc.get("name", ""),
+            lat=float(lat),
+            lon=float(lon),
             type=doc.get("type"),
             subtype=doc.get("subtype"),
             dist_meters=doc.get("dist_meters"),

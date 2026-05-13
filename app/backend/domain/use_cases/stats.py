@@ -95,9 +95,9 @@ def _bucket_for(dim: str, value: Any) -> str | None:
 
 def _ordered_values(dim: str, observed: set[str]) -> list[str]:
     if dim in NUMERIC_BUCKETS:
-        return [label for _, _, label in NUMERIC_BUCKETS[dim] if label in observed]
+        return [label for _, _, label in NUMERIC_BUCKETS[dim]]
     if dim in BOOLEAN_FEATURES:
-        return [v for v in ("Да", "Нет") if v in observed]
+        return ["Да", "Нет"]
     if dim == "location":
         return sorted(observed)
     return sorted(observed)
