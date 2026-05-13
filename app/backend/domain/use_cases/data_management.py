@@ -320,6 +320,7 @@ def _serialize_plot(plot: Plot) -> dict:
         "price_per_sotka": plot.price_per_sotka,
         "location": plot.location, "address": plot.address,
         "geo_ref": plot.geo_ref,
+        "lat": plot.lat, "lon": plot.lon,
         "geo_location": {"type": "Point", "coordinates": [plot.lon, plot.lat]},
         "url": plot.url, "thumbnail": plot.thumbnail,
         "images_count": plot.images_count, "was_lowered": plot.was_lowered,
@@ -345,6 +346,8 @@ def _serialize_infra(obj: InfraObject) -> dict:
         "name": obj.name,
         "type": obj.type,
         "subtype": obj.subtype,
+        "lat": obj.lat,
+        "lon": obj.lon,
         "location": {"type": "Point", "coordinates": [obj.lon, obj.lat]},
     }
 

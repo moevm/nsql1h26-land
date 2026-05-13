@@ -336,3 +336,8 @@ def get_clear_collection_use_case() -> ClearCollectionUseCase:
 def get_stats_use_case() -> GetStatsUseCase:
     s = _get_settings()
     return GetStatsUseCase(get_plot_repo(), get_infra_repo(), s.col_plots, s.infra_slugs)
+
+
+def get_custom_stats_use_case():
+    from domain.use_cases.stats import GetCustomStatsUseCase
+    return GetCustomStatsUseCase(get_plot_repo())

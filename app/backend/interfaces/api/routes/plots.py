@@ -206,6 +206,40 @@ async def get_location_stats(location: Annotated[str, Query(min_length=2)]):
     return LocationStatsOut(**result)
 
 
+@router.get("/stats/dimensions")
+async def stats_dimensions():
+    from domain.use_cases.stats import list_dimensions
+    return {"dimensions": list_dimensions()}
+
+
+@router.get("/stats/custom")
+async def stats_custom(
+    x: Annotated[str, Query()],
+    y: Annotated[str, Query()],
+    min_price: Annotated[float | None, Query(ge=0)] = None,
+    max_price: Annotated[float | None, Query(ge=0)] = None,
+    min_area: Annotated[float | None, Query(ge=0)] = None,
+    max_area: Annotated[float | None, Query(ge=0)] = None,
+    min_score: Annotated[float | None, Query(ge=0, le=1)] = None,
+    max_score: Annotated[float | None, Query(ge=0, le=1)] = None,
+    location: Annotated[str | None, Query()] = None,
+    require_features: Annotated[str | None, Query()] = None,
+):
+    from interfaces.api.deps import get_custom_stats_use_case
+    filters = {
+        "min_price": min_price, "max_price": max_price,
+        "min_area": min_area, "max_area": max_area,
+        "min_score": min_score, "max_score": max_score,
+        "location": location,
+        "require_features": [s for s in (require_features or "").split(",") if s],
+    }
+    use_case = get_custom_stats_use_case()
+    try:
+        return await use_case.execute(x, y, filters)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
 @router.get("/{plot_id}/price-history", response_model=list[PriceHistoryPoint])
 async def get_price_history(plot_id: str):
     use_case = get_price_history_use_case()
