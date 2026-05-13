@@ -18,6 +18,30 @@ export function isMissingError(error: unknown): boolean {
   return error instanceof ApiError && error.status === 404;
 }
 
+function formatDetail(detail: unknown, fallback: string): string {
+  if (!detail) return fallback;
+  if (typeof detail === 'string') return detail;
+  if (Array.isArray(detail)) {
+    const messages = detail
+      .map((item) => {
+        if (typeof item === 'string') return item;
+        if (item && typeof item === 'object') {
+          const obj = item as { loc?: unknown[]; msg?: string };
+          const field = Array.isArray(obj.loc) ? obj.loc.filter((p) => p !== 'body').join('.') : '';
+          return field ? `${field}: ${obj.msg ?? ''}` : (obj.msg ?? '');
+        }
+        return String(item);
+      })
+      .filter(Boolean);
+    return messages.length ? messages.join('; ') : fallback;
+  }
+  if (typeof detail === 'object') {
+    const obj = detail as { msg?: string; message?: string };
+    return obj.msg || obj.message || JSON.stringify(detail);
+  }
+  return String(detail);
+}
+
 async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
   const headers: Record<string, string> = {
     ...getAuthHeaders(),
@@ -26,7 +50,8 @@ async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, { ...init, headers });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
-    throw new ApiError(body.detail || `${res.status} ${res.statusText}`, res.status);
+    const fallback = `${res.status} ${res.statusText}`;
+    throw new ApiError(formatDetail(body.detail, fallback), res.status);
   }
   return res.json();
 }
@@ -422,5 +447,69 @@ export async function importInfra(collection: string, records: Array<Record<stri
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(records),
+  });
+}
+
+export interface StatsDimension {
+  key: string;
+  label: string;
+}
+
+export interface CustomStatsCell {
+  x: string;
+  y: string;
+  count: number;
+}
+
+export interface CustomStatsResponse {
+  x: string;
+  y: string;
+  x_label: string;
+  y_label: string;
+  x_values: string[];
+  y_values: string[];
+  cells: CustomStatsCell[];
+  total: number;
+}
+
+export interface CustomStatsParams {
+  x: string;
+  y: string;
+  min_price?: number;
+  max_price?: number;
+  min_area?: number;
+  max_area?: number;
+  min_score?: number;
+  max_score?: number;
+  location?: string;
+  require_features?: string[];
+}
+
+export async function fetchStatsDimensions(signal?: AbortSignal): Promise<StatsDimension[]> {
+  const data = await fetchJson<{ dimensions: StatsDimension[] }>(`${API_BASE}/plots/stats/dimensions`, { signal });
+  return data.dimensions;
+}
+
+export async function fetchCustomStats(params: CustomStatsParams, signal?: AbortSignal): Promise<CustomStatsResponse> {
+  const search = new URLSearchParams();
+  search.set('x', params.x);
+  search.set('y', params.y);
+  for (const [k, v] of Object.entries(params)) {
+    if (k === 'x' || k === 'y' || v === undefined || v === '' || v === null) continue;
+    if (k === 'require_features' && Array.isArray(v)) {
+      if (v.length) search.set(k, v.join(','));
+      continue;
+    }
+    search.set(k, String(v));
+  }
+  return fetchJson(`${API_BASE}/plots/stats/custom?${search}`, { signal });
+}
+
+export async function uploadImage(file: File): Promise<{ url: string }> {
+  const form = new FormData();
+  form.append('file', file);
+  return fetchJson(`${API_BASE}/uploads/image`, {
+    method: 'POST',
+    body: form,
   });
 }

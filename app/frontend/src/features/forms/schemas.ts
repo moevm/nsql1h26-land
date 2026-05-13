@@ -14,14 +14,14 @@ function optionalBoundedNumber(max: number, maxMessage: string) {
     );
 }
 
-function requiredPositiveNumber(max: number, message: string) {
+function boundedNumber(max: number, message: string) {
   return z
     .string()
     .trim()
     .min(1, 'Обязательное поле')
     .refine((value) => {
       const n = Number(value);
-      return !Number.isNaN(n) && n > 0 && n <= max;
+      return Number.isFinite(n) && n >= 0 && n <= max;
     }, message);
 }
 
@@ -61,8 +61,8 @@ export const plotFormSchema = z.object({
     .trim()
     .min(10, 'Минимум 10 символов')
     .max(80_000, 'Максимум 80 000 символов'),
-  price: requiredPositiveNumber(10_000_000_000, 'Цена должна быть > 0 и ≤ 10 000 000 000'),
-  area_sotki: requiredPositiveNumber(100_000, 'Площадь должна быть > 0 и ≤ 100 000 соток'),
+  price: boundedNumber(10_000_000_000, 'Цена от 0 до 10 000 000 000 ₽'),
+  area_sotki: boundedNumber(100_000, 'Площадь от 0 до 100 000 соток'),
   location: z
     .string()
     .trim()
@@ -76,10 +76,18 @@ export const plotFormSchema = z.object({
   geo_ref: z
     .string()
     .trim()
-    .min(2, 'Минимум 2 символа')
-    .max(150, 'Максимум 150 символов'),
+    .max(150, 'Максимум 150 символов')
+    .optional()
+    .or(z.literal('')),
   url: optionalHttpUrlWithMax(200),
-  thumbnail: optionalHttpUrlWithMax(300),
+  thumbnail: z
+    .string()
+    .trim()
+    .max(300, 'Максимум 300 символов')
+    .refine(
+      (value) => value === '' || /^(https?:\/\/|\/uploads\/)/i.test(value),
+      'Укажите URL или загрузите изображение',
+    ),
 });
 
 export type PlotFormValues = z.infer<typeof plotFormSchema>;

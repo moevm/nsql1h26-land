@@ -5,19 +5,19 @@ const longitude = z.number().gte(-180).lte(180);
 
 export const plotImportRecordSchema = z
   .object({
-    title: z.string().max(200).optional(),
-    description: z.string().max(80_000).optional(),
-    price: z.number().nonnegative().max(10_000_000_000).optional(),
-    area_sotki: z.number().positive().max(100_000).optional(),
-    location: z.string().max(120).optional(),
-    address: z.string().max(2_500).optional(),
-    geo_ref: z.string().max(200).optional(),
-    lat: latitude.optional(),
-    lon: longitude.optional(),
-    lng: longitude.optional(),
-    url: z.string().max(500).optional(),
-    thumbnail: z.string().max(500).optional(),
-    avito_id: z.union([z.number(), z.string()]).optional(),
+    title: z.string().nullish(),
+    description: z.string().nullish(),
+    price: z.number().nullish(),
+    area_sotki: z.number().nullish(),
+    location: z.string().nullish(),
+    address: z.string().nullish(),
+    geo_ref: z.string().nullish(),
+    lat: latitude.nullish(),
+    lon: longitude.nullish(),
+    lng: longitude.nullish(),
+    url: z.string().nullish(),
+    thumbnail: z.string().nullish(),
+    avito_id: z.union([z.number(), z.string()]).nullish(),
   })
   .passthrough()
   .superRefine((value, ctx) => {
@@ -49,6 +49,41 @@ export const infraImportPayloadSchema = z
     (record) => Object.keys(record).length > 0,
     'JSON должен содержать хотя бы одну коллекцию',
   );
+
+const INFRA_COLLECTION_KEYS = [
+  'metro_stations',
+  'hospitals',
+  'schools',
+  'kindergartens',
+  'stores',
+  'pickup_points',
+  'bus_stops',
+  'negative_objects',
+] as const;
+
+export function splitCombinedImport(input: unknown): {
+  plots: unknown[];
+  infra: Record<string, unknown[]>;
+} {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) {
+    throw new Error('Ожидается объект с ключами plots и/или инфраструктурными коллекциями');
+  }
+  const obj = input as Record<string, unknown>;
+  const plots = Array.isArray(obj.plots)
+    ? obj.plots
+    : Array.isArray(obj.data)
+      ? obj.data
+      : [];
+  const infra: Record<string, unknown[]> = {};
+  for (const key of INFRA_COLLECTION_KEYS) {
+    const value = obj[key];
+    if (Array.isArray(value)) infra[key] = value;
+  }
+  if (!plots.length && Object.keys(infra).length === 0) {
+    throw new Error('Файл не содержит ни plots, ни коллекций инфраструктуры');
+  }
+  return { plots, infra };
+}
 export function extractPlotsArray(input: unknown): unknown[] {
   if (Array.isArray(input)) return input;
   if (input && typeof input === 'object') {

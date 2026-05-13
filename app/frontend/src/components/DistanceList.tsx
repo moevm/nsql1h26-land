@@ -3,6 +3,9 @@ import type { PlotDistances } from '../api';
 import { SectionTitle } from './SectionTitle';
 import { Surface } from './ui';
 
+const MAX_KM = 50;
+const NO_DATA_MESSAGE = `Нет сведений об объектах в радиусе ${MAX_KM} км`;
+
 const DISTANCE_ROW_CONFIG = [
   { key: 'nearest_metro', icon: TrainFront, label: 'МЕТРО' },
   { key: 'nearest_hospital', icon: Hospital, label: 'БОЛЬНИЦА' },
@@ -20,26 +23,47 @@ function distanceColor(km: number): string {
   return 'var(--c-red)';
 }
 
-function DistanceRow({ icon: Icon, label, name, km }: { readonly icon: React.ElementType; readonly label: string; readonly name: string; readonly km: number }) {
-  const color = distanceColor(km);
+function DistanceRow({
+  icon: Icon,
+  label,
+  name,
+  km,
+  hidden,
+}: {
+  readonly icon: React.ElementType;
+  readonly label: string;
+  readonly name: string;
+  readonly km: number;
+  readonly hidden?: boolean;
+}) {
+  const color = hidden ? 'var(--c-text-dim)' : distanceColor(km);
   return (
     <div
-      className="flex items-center justify-between py-3 px-4 rounded-lg row-hover"
+      className="flex items-center justify-between gap-3 py-3 px-4 rounded-lg row-hover"
       style={{ borderBottom: '1px solid var(--c-border)' }}
     >
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-3 min-w-0">
         <Icon size={18} style={{ color: 'var(--c-text-muted)', flexShrink: 0 }} />
-        <div>
-          <span className="text-xs uppercase tracking-wide" style={{ color: 'var(--c-text-dim)', fontFamily: 'var(--font-mono)' }}>{label}</span>
-          <p className="text-sm" style={{ color: 'var(--c-text)' }}>{name || '—'}</p>
+        <div className="min-w-0">
+          <span
+            className="text-xs uppercase tracking-wide"
+            style={{ color: 'var(--c-text-dim)', fontFamily: 'var(--font-mono)' }}
+          >
+            {label}
+          </span>
+          <p className="text-sm" style={{ color: hidden ? 'var(--c-text-dim)' : 'var(--c-text)' }}>
+            {hidden ? NO_DATA_MESSAGE : (name || '—')}
+          </p>
         </div>
       </div>
-      <span
-        className="text-sm font-semibold tabular-nums"
-        style={{ color, fontFamily: 'var(--font-mono)' }}
-      >
-        {km.toFixed(1)} км
-      </span>
+      {!hidden && (
+        <span
+          className="text-sm font-semibold tabular-nums whitespace-nowrap"
+          style={{ color, fontFamily: 'var(--font-mono)' }}
+        >
+          {km.toFixed(1)} км
+        </span>
+      )}
     </div>
   );
 }
@@ -51,13 +75,16 @@ export default function DistanceList({ distances }: { readonly distances: PlotDi
       <div className="space-y-0">
         {DISTANCE_ROW_CONFIG.map((item) => {
           const distance = distances[item.key];
+          const km = distance?.km ?? 0;
+          const hidden = km <= 0 || km > MAX_KM;
           return (
             <DistanceRow
               key={item.key}
               icon={item.icon}
               label={item.label}
               name={distance?.name ?? ''}
-              km={distance?.km ?? 0}
+              km={km}
+              hidden={hidden}
             />
           );
         })}
