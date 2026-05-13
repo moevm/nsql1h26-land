@@ -1,5 +1,5 @@
 services:
-  mongo:
+  db:
     build:
       context: ./app
       dockerfile: db/Dockerfile
@@ -21,10 +21,10 @@ services:
     ports:
       - "127.0.0.1:8081:8081"
     environment:
-      - ME_CONFIG_MONGODB_URL=${MONGO_EXPRESS_MONGODB_URL:-mongodb://mongo:27017}
+      - ME_CONFIG_MONGODB_URL=${MONGO_EXPRESS_MONGODB_URL:-mongodb://db:27017}
       - ME_CONFIG_BASICAUTH=${MONGO_EXPRESS_BASICAUTH:-false}
     depends_on:
-      mongo:
+      db:
         condition: service_healthy
     restart: unless-stopped
 
@@ -37,7 +37,7 @@ services:
     ports:
       - "127.0.0.1:8000:8000"
     environment:
-      - MONGODB_URI=${MONGODB_URI:-mongodb://mongo:27017}
+      - MONGODB_URI=${MONGODB_URI:-mongodb://db:27017}
       - MONGODB_DB=${MONGODB_DB:-land_plots}
       - JINA_API_KEY=${JINA_API_KEY:-}
       - JINA_EMBEDDINGS_MODEL=${JINA_EMBEDDINGS_MODEL:-jina-embeddings-v3}
@@ -53,7 +53,7 @@ services:
       - SEED_USER_PASSWORD=${SEED_USER_PASSWORD:-user}
       - UPLOAD_DIR=/app/uploads
     depends_on:
-      mongo:
+      db:
         condition: service_healthy
     volumes:
       - uploads_data:/app/uploads
